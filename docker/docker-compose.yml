@@ -1,0 +1,37 @@
+name: arvisx
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arvisx
+      POSTGRES_PASSWORD: arvisx_dev_password
+      POSTGRES_DB: arvisx
+    ports:
+      - "5432:5432"
+    volumes:
+      - arvisx_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arvisx -d arvisx"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://arvisx:arvisx_dev_password@postgres:5432/arvisx?schema=public
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  arvisx_postgres_data:

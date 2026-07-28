@@ -1,0 +1,445 @@
+// ARVISX Web — schema principal (Fase 0-4 do plano)
+// Ver plano em C:\Users\lcsin\.claude\plans\optimized-toasting-sloth.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum BrandStatus {
+  ONBOARDING
+  ACTIVE
+  PAUSED
+}
+
+enum BrandRole {
+  OWNER
+  MANAGER
+  VIEWER
+}
+
+enum Platform {
+  META
+  GOOGLE
+}
+
+enum CredentialStatus {
+  PENDING
+  CONNECTED
+  AUTH_ERROR
+  DISCONNECTED
+}
+
+enum CollectionState {
+  OK
+  AUTH_ERROR
+  EMPTY
+  API_ERROR
+}
+
+enum Verdict {
+  BOM
+  MEDIO
+  RUIM
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+enum ProposalType {
+  NEW_CAMPAIGN
+  PAUSE_AD
+  ACTIVATE_AD
+  ADJUST_BUDGET
+  CREATE_AD_VARIATION
+  CREATE_AB_TEST
+  OTHER
+}
+
+enum ProposalStatus {
+  NEEDS_MORE_DATA
+  PENDING
+  APPROVED
+  REJECTED
+  TEST
+  ADJUST
+  EXECUTED
+  EXECUTION_FAILED
+}
+
+enum ExecutionAction {
+  PAUSE_AD
+  ACTIVATE_AD
+  ADJUST_BUDGET
+  CREATE_AD_VARIATION
+  CREATE_AB_TEST
+}
+
+enum ExecutionStatus {
+  SUCCESS
+  FAILED
+}
+
+// ---------- Core models ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  image        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brandAccess         BrandAccess[]
+  threads             ConversationThread[]
+  decidedProposals    Proposal[]           @relation("ProposalDecidedBy")
+  createdProposals    Proposal[]           @relation("ProposalCreatedBy")
+  executions          ExecutionLog[]       @relation("ExecutedBy")
+  providerConnections ProviderConnection[]
+}
+
+model BrandAccess {
+  id        String    @id @default(cuid())
+  userId    String
+  brandId   String
+  role      BrandRole @default(VIEWER)
+  createdAt DateTime  @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, brandId])
+}
+
+model Brand {
+  id               String      @id @default(cuid())
+  slug             String      @unique // vne | renan | vdv | arvisx | nesso | alvance | psa
+  name             String
+  status           BrandStatus @default(ONBOARDING)
+  topicKeywords    String[] // palavras-chave permitidas (usadas pelo firewall)
+  excludedKeywords String[]    @default([]) // palavras-chave conhecidas de OUTRAS marcas
+  priorityOrder    Int         @default(0) // ordem da rodada proativa do scheduler
+  colorHex         String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  brandAccess      BrandAccess[]
+  credentials      AdCredential[]
+  metricSnapshots  AdMetricSnapshot[]
+  rankingSnapshots RankingSnapshot[]
+  threads          ConversationThread[]
+  proposals        Proposal[]
+  executionLogs    ExecutionLog[]
+  schedulerResults SchedulerBrandResult[]
+  firewallLogs     FirewallLog[]
+  abTests          AbTest[]
+  adCreatives      AdCreative[]
+}
+
+/**
+ * Um login OAuth (Meta ou Google Ads) de um usuario. Guardado uma unica vez por pessoa+plataforma,
+ * nao por marca — conectar aqui descobre todas as contas de anuncio visiveis a esse login, que
+ * depois sao atribuidas a marcas especificas via AdCredential.
+ */
+model ProviderConnection {
+  id                    String           @id @default(cuid())
+  userId                String
+  platform              Platform
+  label                 String? // ex: nome da conta/Business Manager, preenchido no callback
+  encryptedAccessToken  String // AES-256-GCM ciphertext (base64)
+  encryptedRefreshToken String?
+  tokenExpiresAt        DateTime?
+  status                CredentialStatus @default(PENDING)
+  lastCheckedAt         DateTime?
+  lastError             String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments AdCredential[]
+}
+
+/**
+ * Atribuicao de uma conta de anuncio (descoberta via ProviderConnection) a UMA marca.
+ * `(platform, externalAccountId)` e unico globalmente: a mesma conta nunca pode estar
+ * atribuida a duas marcas ao mesmo tempo — e o firewall de marca aplicado no banco.
+ */
+model AdCredential {
+  id                   String           @id @default(cuid())
+  brandId              String
+  providerConnectionId String
+  platform             Platform
+  externalAccountId    String // Meta ad account id / Google Ads customer id
+  loginCustomerId      String? // Google Ads MCC login-customer-id, se aplicavel
+  label                String?
+  status               CredentialStatus @default(PENDING)
+  lastCheckedAt        DateTime?
+  lastError            String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  brand              Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  providerConnection ProviderConnection @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
+  metricSnapshots    AdMetricSnapshot[]
+  adCreatives        AdCreative[]
+
+  @@unique([platform, externalAccountId])
+}
+
+/**
+ * Biblioteca de criativos ja publicados na conta - diferente de AdMetricSnapshot
+ * (que e serie historica de propósito, uma linha por coleta), aqui e so o ESTADO
+ * ATUAL de cada criativo: cada sincronizacao faz upsert por (credentialId,
+ * platformAdId) em vez de acumular linha nova. Cobre anuncios sem gasto recente
+ * tambem (listagem direta de objetos, nao um relatorio de Insights por data).
+ */
+model AdCreative {
+  id                 String   @id @default(cuid())
+  brandId            String
+  credentialId       String
+  platform           Platform
+  platformAdId       String
+  platformCampaignId String?
+  campaignName       String?
+  adName             String?
+  status             String?
+  headline           String?
+  bodyText           String?
+  thumbnailUrl       String?
+  callToAction       String?
+  raw                Json?
+  collectedAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@unique([credentialId, platformAdId])
+}
+
+model AdMetricSnapshot {
+  id                 String          @id @default(cuid())
+  brandId            String
+  credentialId       String
+  platform           Platform
+  platformCampaignId String?
+  campaignName       String?
+  platformAdId       String?
+  adName             String?
+  // Meta: id do AdSet (onde a verba mora). Google: id do AdGroup (necessario pra
+  // pausar/ativar o anuncio - o resourceName exige adGroupId~adId).
+  platformAdSetId    String?
+  collectionState    CollectionState
+  dateRangeStart     DateTime
+  dateRangeEnd       DateTime
+  spend              Decimal         @default(0) @db.Decimal(12, 2)
+  impressions        Int             @default(0)
+  clicks             Int             @default(0)
+  ctr                Decimal         @default(0) @db.Decimal(7, 4) // percentual
+  cpc                Decimal         @default(0) @db.Decimal(10, 2)
+  conversions        Int             @default(0)
+  cpl                Decimal?        @db.Decimal(10, 2)
+  cpa                Decimal?        @db.Decimal(10, 2)
+  // Campos estilo Gerenciador de Anuncios - nulos quando a plataforma nao fornece
+  // (ex: alcance/frequencia nao existem por anuncio na maioria das campanhas do
+  // Google Ads, entao ficam null la e nunca sao inventados).
+  reach              Int?
+  frequency          Decimal?        @db.Decimal(6, 2)
+  cpm                Decimal?        @db.Decimal(10, 2)
+  adStatus           String?
+  raw                Json?
+  errorMessage       String?
+  collectedAt        DateTime        @default(now())
+
+  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, platform, collectedAt])
+  @@index([brandId, platformAdId])
+}
+
+model RankingSnapshot {
+  id                     String   @id @default(cuid())
+  brandId                String
+  computedAt             DateTime @default(now())
+  verdict                Verdict
+  bucketsJson            Json // { spend_no_conversion:[], low_ctr:[], high_cpl:[], scale_candidates:[], needs_new_creative:[] }
+  recommendedActionsJson Json // ate 3: {reason, metrics, suggestedAction, risk, rollback}
+  sourceRangeStart       DateTime
+  sourceRangeEnd         DateTime
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, computedAt])
+}
+
+model ConversationThread {
+  id            String    @id @default(cuid())
+  brandId       String
+  userId        String
+  title         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastMessageAt DateTime?
+
+  brand     Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  proposals Proposal[]
+
+  @@index([brandId, updatedAt])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  threadId       String
+  role           MessageRole
+  content        String      @db.Text
+  toolName       String?
+  toolCallId     String?
+  toolArgsJson   Json?
+  toolResultJson Json?
+  tokensInput    Int?
+  tokensOutput   Int?
+  createdAt      DateTime    @default(now())
+
+  thread ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
+model Proposal {
+  id                 String         @id @default(cuid())
+  brandId            String
+  threadId           String?
+  createdByUserId    String? // null quando criado pelo scheduler/agente de forma autonoma
+  type               ProposalType
+  status             ProposalStatus @default(PENDING)
+  title              String
+  reason             String         @db.Text
+  metricsJson        Json // metricas citadas para justificar a recomendacao
+  suggestedAction    String         @db.Text
+  risk               String         @db.Text
+  rollbackPlan       String         @db.Text
+  platform           Platform?
+  platformCampaignId String?
+  platformAdId       String?
+  // Meta: id do AdSet (onde a verba mora - necessario pra executar ADJUST_BUDGET).
+  // Google: id do AdGroup (necessario pra executar PAUSE_AD/ACTIVATE_AD).
+  platformAdSetId    String?
+  payloadJson        Json // proposta estruturada completa (budget, creative brief, etc.)
+  decidedByUserId    String?
+  decidedAt          DateTime?
+  decisionNote       String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  brand      Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  thread     ConversationThread? @relation(fields: [threadId], references: [id])
+  createdBy  User?               @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
+  decidedBy  User?               @relation("ProposalDecidedBy", fields: [decidedByUserId], references: [id])
+  executions ExecutionLog[]
+  abTest     AbTest?
+
+  @@index([brandId, status])
+}
+
+/**
+ * Teste A/B real: dois anuncios de verdade rodando em paralelo (controle = original,
+ * variante = copia com uma variavel mudada - so verba nesta versao). A comparacao usa
+ * a coleta normal de metricas (AdMetricSnapshot), sem inventar estatistica.
+ */
+model AbTest {
+  id             String    @id @default(cuid())
+  proposalId     String    @unique
+  brandId        String
+  platform       Platform
+  controlAdId    String
+  controlAdSetId String
+  variantAdId    String
+  variantAdSetId String
+  testedVariable String // "BUDGET" - unica suportada nesta rodada
+  controlValue   Decimal   @db.Decimal(10, 2)
+  variantValue   Decimal   @db.Decimal(10, 2)
+  startedAt      DateTime  @default(now())
+  endsAt         DateTime
+  status         String // RUNNING | COMPLETED
+  winner         String? // CONTROL | VARIANT | INCONCLUSIVE
+  resultSummary  Json?
+  completedAt    DateTime?
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([status, endsAt])
+}
+
+model ExecutionLog {
+  id               String          @id @default(cuid())
+  proposalId       String // obrigatorio - garante "sempre vinculado a uma proposta"
+  brandId          String
+  executedByUserId String?
+  platform         Platform
+  action           ExecutionAction
+  requestJson      Json
+  responseJson     Json?
+  status           ExecutionStatus
+  errorMessage     String?
+  rollbackInfoJson Json?
+  executedAt       DateTime        @default(now())
+
+  proposal   Proposal @relation(fields: [proposalId], references: [id])
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  executedBy User?    @relation("ExecutedBy", fields: [executedByUserId], references: [id])
+
+  @@index([brandId, executedAt])
+}
+
+// ---------- Observabilidade ----------
+
+model SchedulerRun {
+  id           String    @id @default(cuid())
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  status       String // running | completed | failed
+  errorMessage String?
+
+  brandResults SchedulerBrandResult[]
+}
+
+model SchedulerBrandResult {
+  id             String  @id @default(cuid())
+  schedulerRunId String
+  brandId        String
+  outcome        String // proposal_created | no_action | skipped_recent | error
+  proposalId     String?
+  errorMessage   String?
+
+  run   SchedulerRun @relation(fields: [schedulerRunId], references: [id], onDelete: Cascade)
+  brand Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+}
+
+model FirewallLog {
+  id              String   @id @default(cuid())
+  brandId         String
+  direction       String // IN | OUT
+  contentSnippet  String   @db.Text
+  matchedKeywords String[]
+  decision        String // ALLOW | BLOCK
+  createdAt       DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
+}
