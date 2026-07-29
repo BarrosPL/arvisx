@@ -13,6 +13,7 @@ import {
   ListChecks,
   Plug,
   Plus,
+  ShieldCheck,
   Wand2,
 } from "lucide-react";
 import { BrandAvatar } from "@/components/brand-avatar";
@@ -75,9 +76,11 @@ export function brandNavFor(slug: string): NavItem[] {
 export function AppSidebar({
   brands,
   userEmail,
+  isAdmin,
 }: {
   brands: BrandNavItem[];
   userEmail: string;
+  isAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -213,6 +216,26 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {isAdmin ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Sistema</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/admin")}
+                    tooltip="Administração"
+                    render={<Link href="/admin/users" />}
+                    className="relative data-active:bg-primary/8 data-active:text-primary data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-primary"
+                  >
+                    <IconBadge icon={ShieldCheck} color="blue" size="xs" />
+                    <span>Administração</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
 
       <SidebarFooter>

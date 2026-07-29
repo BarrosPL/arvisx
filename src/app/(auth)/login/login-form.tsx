@@ -12,6 +12,7 @@ export function LoginForm() {
   const [error, formAction, isPending] = useActionState(loginAction, undefined);
   const searchParams = useSearchParams();
   const sessionError = searchParams.get("session_error");
+  const passwordChanged = searchParams.get("passwordChanged");
   const alertMessage = error ?? sessionError;
 
   return (
@@ -31,6 +32,16 @@ export function LoginForm() {
           <Label htmlFor="password">Senha</Label>
           <Input id="password" name="password" type="password" required autoComplete="current-password" />
         </div>
+
+        {!alertMessage && passwordChanged ? (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>Senha alterada. Entre novamente com a nova senha.</span>
+          </div>
+        ) : null}
 
         {alertMessage ? (
           <div

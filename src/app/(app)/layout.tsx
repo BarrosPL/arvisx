@@ -11,6 +11,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user?.id) {
     redirect("/login");
   }
+  if (session.user.mustChangePassword) {
+    redirect("/change-password");
+  }
 
   const brands = await prisma.brand.findMany({
     where: { brandAccess: { some: { userId: session.user.id } } },
@@ -25,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
-      <AppSidebar brands={brands} userEmail={session.user.email!} />
+      <AppSidebar brands={brands} userEmail={session.user.email!} isAdmin={session.user.role === "ADMIN"} />
       <JamileProvider>
         <SidebarInset>
           <AppHeader brands={brands} userEmail={session.user.email!} onSignOut={handleSignOut} />

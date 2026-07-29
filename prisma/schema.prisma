@@ -49,6 +49,11 @@ enum Verdict {
   RUIM
 }
 
+enum SystemRole {
+  USER
+  ADMIN
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -93,13 +98,23 @@ enum ExecutionStatus {
 // ---------- Core models ----------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  image        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String     @id @default(cuid())
+  email              String     @unique
+  name               String?
+  passwordHash       String
+  image              String?
+  // Papel de sistema (nao confundir com BrandRole, que e por marca): controla acesso
+  // ao painel /admin. Ver policies de RLS na migration add_user_admin_rls - o Postgres
+  // reconfirma este campo direto do banco, nao confia so na checagem da aplicacao.
+  role               SystemRole @default(USER)
+  // Forca a tela de troca de senha antes de liberar o resto do app - usado quando um
+  // admin cria a conta ou reseta a senha de alguem (nunca definido pelo proprio usuario).
+  mustChangePassword Boolean    @default(false)
+  // Desativa o login sem apagar o historico (proposals/threads/etc criados por esse
+  // usuario). Null = conta ativa.
+  disabledAt         DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   brandAccess         BrandAccess[]
   threads             ConversationThread[]

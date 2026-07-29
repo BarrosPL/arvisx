@@ -6,10 +6,20 @@ const globalForPrisma = globalThis as {
 };
 
 function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
+  // A aplicacao roda com um papel de Postgres restrito (nao-superusuario), diferente
+  // do papel usado por `prisma migrate deploy`/seed (esse precisa de privilegio de
+  // dono pra ALTER TABLE/CREATE POLICY). Isso nao e cosmetico: a RLS da tabela User
+  // (migration add_user_admin_rls) so tem efeito real numa conexao sem superusuario/
+  // BYPASSRLS - Postgres ignora RLS pra essas incondicionalmente. Ver migration
+  // add_restricted_app_role e instrucoes de deploy pra criar/configurar este papel.
+  const connectionString = process.env.APP_DATABASE_URL;
 
   if (!connectionString) {
-    throw new Error("DATABASE_URL não configurada");
+    throw new Error(
+      "APP_DATABASE_URL não configurada - a aplicação precisa de uma connection string separada, " +
+        "usando o papel Postgres restrito (não-superusuário), pra RLS funcionar de verdade. " +
+        "Ver migration add_restricted_app_role."
+    );
   }
 
   const adapter = new PrismaPg({

@@ -27,6 +27,9 @@ services:
       - ../.env
     environment:
       DATABASE_URL: postgresql://arvisx:arvisx_dev_password@postgres:5432/arvisx?schema=public
+      # Senha de arvisx_app definida manualmente (ALTER ROLE) - ver migration
+      # add_restricted_app_role e .env.example. Sobrescreva aqui ou no .env se mudar.
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-postgresql://arvisx_app:CHANGE_ME@postgres:5432/arvisx?schema=public}
     ports:
       - "3000:3000"
     depends_on:

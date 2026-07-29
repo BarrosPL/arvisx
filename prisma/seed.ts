@@ -14,14 +14,25 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(ownerPassword, 12);
 
-  const owner = await prisma.user.upsert({
-    where: { email: ownerEmail },
-    update: {},
-    create: {
-      email: ownerEmail,
-      name: ownerName,
-      passwordHash,
-    },
+  // As policies de RLS da tabela User (migration add_user_admin_rls) exigem que quem
+  // escreve seja admin - exceto na janela de bootstrap (nenhum admin ainda existe no
+  // sistema). Como este script so roda com acesso direto ao banco (ja e uma operacao
+  // de confianca), ele age "em nome" do primeiro admin que encontrar so pra passar
+  // nessa checagem; fora da janela de bootstrap, se ainda nao existir nenhum admin,
+  // o placeholder abaixo e ignorado pela policy mesmo assim.
+  const anyAdmin = await prisma.user.findFirst({ where: { role: "ADMIN", disabledAt: null } });
+
+  const owner = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.current_user_id', ${anyAdmin?.id ?? "seed-bootstrap"}, true)`;
+    return tx.user.upsert({
+      where: { email: ownerEmail },
+      update: {},
+      create: {
+        email: ownerEmail,
+        name: ownerName,
+        passwordHash,
+      },
+    });
   });
 
   for (const brand of BRAND_REGISTRY) {

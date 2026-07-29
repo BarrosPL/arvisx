@@ -38,6 +38,24 @@ export async function requireUser(): Promise<SessionUser> {
 }
 
 /**
+ * Garante que o usuario autenticado e admin de sistema (role global, nao BrandRole).
+ * Esta e so a checagem rapida do lado da aplicacao (pra dar 403 cedo e com boa
+ * mensagem) - a garantia de verdade contra escrita indevida na tabela User e a policy
+ * de RLS (migration add_user_admin_rls), que reconsulta o banco e nao confia nesta
+ * funcao. Usar em toda rota/pagina de /admin.
+ */
+export async function requireAdmin(): Promise<SessionUser> {
+  const session = await auth();
+  if (!session?.user?.id || !session.user.email) {
+    throw new UnauthorizedError();
+  }
+  if (session.user.role !== "ADMIN") {
+    throw new ForbiddenError("Acesso restrito a administradores");
+  }
+  return { id: session.user.id, email: session.user.email, name: session.user.name };
+}
+
+/**
  * Garante que o usuario autenticado tem, no minimo, o papel `minRole` na marca `brandId`.
  * Esta e a checagem de brand firewall no nivel de acesso: nenhuma rota de marca deve
  * pular esta funcao.
