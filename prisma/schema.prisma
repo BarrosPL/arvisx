@@ -8,6 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["arvisx"]
 }
 
 // ---------- Enums ----------
@@ -16,17 +17,23 @@ enum BrandStatus {
   ONBOARDING
   ACTIVE
   PAUSED
+
+  @@schema("arvisx")
 }
 
 enum BrandRole {
   OWNER
   MANAGER
   VIEWER
+
+  @@schema("arvisx")
 }
 
 enum Platform {
   META
   GOOGLE
+
+  @@schema("arvisx")
 }
 
 enum CredentialStatus {
@@ -34,6 +41,8 @@ enum CredentialStatus {
   CONNECTED
   AUTH_ERROR
   DISCONNECTED
+
+  @@schema("arvisx")
 }
 
 enum CollectionState {
@@ -41,17 +50,23 @@ enum CollectionState {
   AUTH_ERROR
   EMPTY
   API_ERROR
+
+  @@schema("arvisx")
 }
 
 enum Verdict {
   BOM
   MEDIO
   RUIM
+
+  @@schema("arvisx")
 }
 
 enum SystemRole {
   USER
   ADMIN
+
+  @@schema("arvisx")
 }
 
 enum MessageRole {
@@ -59,6 +74,8 @@ enum MessageRole {
   ASSISTANT
   TOOL
   SYSTEM
+
+  @@schema("arvisx")
 }
 
 enum ProposalType {
@@ -69,6 +86,8 @@ enum ProposalType {
   CREATE_AD_VARIATION
   CREATE_AB_TEST
   OTHER
+
+  @@schema("arvisx")
 }
 
 enum ProposalStatus {
@@ -80,6 +99,8 @@ enum ProposalStatus {
   ADJUST
   EXECUTED
   EXECUTION_FAILED
+
+  @@schema("arvisx")
 }
 
 enum ExecutionAction {
@@ -88,11 +109,15 @@ enum ExecutionAction {
   ADJUST_BUDGET
   CREATE_AD_VARIATION
   CREATE_AB_TEST
+
+  @@schema("arvisx")
 }
 
 enum ExecutionStatus {
   SUCCESS
   FAILED
+
+  @@schema("arvisx")
 }
 
 // ---------- Core models ----------
@@ -122,6 +147,8 @@ model User {
   createdProposals    Proposal[]           @relation("ProposalCreatedBy")
   executions          ExecutionLog[]       @relation("ExecutedBy")
   providerConnections ProviderConnection[]
+
+  @@schema("arvisx")
 }
 
 model BrandAccess {
@@ -135,6 +162,7 @@ model BrandAccess {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@unique([userId, brandId])
+  @@schema("arvisx")
 }
 
 model Brand {
@@ -160,6 +188,8 @@ model Brand {
   firewallLogs     FirewallLog[]
   abTests          AbTest[]
   adCreatives      AdCreative[]
+
+  @@schema("arvisx")
 }
 
 /**
@@ -183,6 +213,8 @@ model ProviderConnection {
 
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments AdCredential[]
+
+  @@schema("arvisx")
 }
 
 /**
@@ -210,6 +242,7 @@ model AdCredential {
   adCreatives        AdCreative[]
 
   @@unique([platform, externalAccountId])
+  @@schema("arvisx")
 }
 
 /**
@@ -241,6 +274,7 @@ model AdCreative {
   credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
   @@unique([credentialId, platformAdId])
+  @@schema("arvisx")
 }
 
 model AdMetricSnapshot {
@@ -282,6 +316,7 @@ model AdMetricSnapshot {
 
   @@index([brandId, platform, collectedAt])
   @@index([brandId, platformAdId])
+  @@schema("arvisx")
 }
 
 model RankingSnapshot {
@@ -297,6 +332,7 @@ model RankingSnapshot {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, computedAt])
+  @@schema("arvisx")
 }
 
 model ConversationThread {
@@ -310,6 +346,8 @@ model ConversationThread {
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
   proposals Proposal[]
+
+  @@schema("arvisx")
 }
 
 model Message {
@@ -335,6 +373,7 @@ model Message {
 
   @@index([threadId, createdAt])
   @@index([brandId, createdAt])
+  @@schema("arvisx")
 }
 
 model Proposal {
@@ -375,6 +414,7 @@ model Proposal {
   abTest     AbTest?
 
   @@index([brandId, status])
+  @@schema("arvisx")
 }
 
 /**
@@ -405,6 +445,7 @@ model AbTest {
   brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([status, endsAt])
+  @@schema("arvisx")
 }
 
 model ExecutionLog {
@@ -426,6 +467,7 @@ model ExecutionLog {
   executedBy User?    @relation("ExecutedBy", fields: [executedByUserId], references: [id])
 
   @@index([brandId, executedAt])
+  @@schema("arvisx")
 }
 
 // ---------- Observabilidade ----------
@@ -438,6 +480,8 @@ model SchedulerRun {
   errorMessage String?
 
   brandResults SchedulerBrandResult[]
+
+  @@schema("arvisx")
 }
 
 model SchedulerBrandResult {
@@ -450,6 +494,8 @@ model SchedulerBrandResult {
 
   run   SchedulerRun @relation(fields: [schedulerRunId], references: [id], onDelete: Cascade)
   brand Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@schema("arvisx")
 }
 
 model FirewallLog {
@@ -464,4 +510,5 @@ model FirewallLog {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, createdAt])
+  @@schema("arvisx")
 }
