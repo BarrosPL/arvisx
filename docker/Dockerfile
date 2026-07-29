@@ -83,6 +83,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src/generated ./src/generated
+# node_modules completo (o build "standalone" do Next só traz o necessário pro
+# servidor rodar, sem o binario do Prisma CLI - precisamos dele aqui pra rodar
+# as migrations no start do container).
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 USER nextjs
 
@@ -91,4 +95,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx --no-install prisma migrate deploy && node server.js"]
