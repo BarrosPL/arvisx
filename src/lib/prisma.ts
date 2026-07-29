@@ -31,10 +31,20 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
-export const prisma =
-  globalForPrisma.prisma ??
-  createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+function getPrismaClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+// Proxy em vez de instanciar direto: `next build` importa todo route.ts pra coletar
+// dados de build ("Collecting page data"), o que rodaria este modulo mesmo sem
+// nenhuma request de verdade acontecer. Com o proxy, APP_DATABASE_URL so precisa
+// existir quando uma query e efetivamente chamada (ex: prisma.user.findMany) - nunca
+// no build, so em runtime.
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getPrismaClient() as object, prop, receiver);
+  },
+});
