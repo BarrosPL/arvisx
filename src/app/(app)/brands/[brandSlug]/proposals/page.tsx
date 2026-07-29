@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { type ProposalView, type ProposalAbTestView } from "@/components/proposal-card";
 import { ProposalsBoard } from "@/components/proposals-board";
 import { PageHeader } from "@/components/page-header";
+import type { CampaignPlan } from "@/lib/agent/schema";
 
 interface PageProps {
   params: Promise<{ brandSlug: string }>;
@@ -24,6 +25,8 @@ function toProposalView(proposal: {
   platformAdId: string | null;
   decisionNote: string | null;
   createdAt: Date;
+  payloadJson: unknown;
+  creativeAssetData: Buffer | Uint8Array | null;
   executions: { errorMessage: string | null }[];
   abTest: {
     status: string;
@@ -34,10 +37,26 @@ function toProposalView(proposal: {
     resultSummary: unknown;
   } | null;
 }): ProposalView {
+  const payload = (proposal.payloadJson as { campaignPlan?: CampaignPlan } | null) ?? null;
+
   return {
-    ...proposal,
+    id: proposal.id,
+    type: proposal.type,
+    status: proposal.status,
+    title: proposal.title,
+    reason: proposal.reason,
     metricsJson: (proposal.metricsJson as Record<string, unknown>) ?? {},
+    suggestedAction: proposal.suggestedAction,
+    risk: proposal.risk,
+    rollbackPlan: proposal.rollbackPlan,
+    platform: proposal.platform,
+    platformCampaignId: proposal.platformCampaignId,
+    platformAdId: proposal.platformAdId,
+    decisionNote: proposal.decisionNote,
     createdAt: proposal.createdAt.toISOString(),
+    // Nunca manda os bytes da imagem pro client - so se ja tem uma anexada ou nao.
+    hasCreativeAsset: proposal.creativeAssetData !== null,
+    campaignPlan: proposal.type === "NEW_CAMPAIGN" ? (payload?.campaignPlan ?? null) : null,
     lastExecutionError: proposal.executions[0]?.errorMessage ?? null,
     abTest: proposal.abTest
       ? {

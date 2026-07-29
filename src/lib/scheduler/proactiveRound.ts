@@ -54,6 +54,7 @@ async function createProposalFromAction(brandId: string, action: RecommendedActi
 
   const readiness = evaluateProposalReadiness({
     type: action.proposalType,
+    platform: action.row.platform,
     platformCampaignId: action.row.platformCampaignId,
     platformAdId: action.row.platformAdId,
     metricsJson,

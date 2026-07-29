@@ -161,14 +161,19 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
           },
           campaignPlan: {
             type: "object",
-            description: "Obrigatorio para NEW_CAMPAIGN. Plano completo da campanha nova.",
+            description:
+              "Obrigatorio para NEW_CAMPAIGN. Plano completo da campanha nova. Pro Meta, preencha metaTargeting (usa headline/primaryText/description/callToAction - um so anuncio de imagem, a imagem em si e anexada por um humano depois, voce nunca gera/promete imagem). Pro Google, preencha googleKeywords E googleAd (Responsive Search Ad - so texto, sem imagem) - headline/primaryText/description sozinhos NAO bastam pro Google, o RSA exige varias variacoes.",
             properties: {
               campaignName: { type: "string" },
               dailyBudget: { type: "number", exclusiveMinimum: 0 },
               headline: { type: "string" },
               primaryText: { type: "string" },
               description: { type: "string" },
-              callToAction: { type: "string" },
+              callToAction: {
+                type: "string",
+                description: "So usado no Meta - o Google RSA nao tem call-to-action.",
+                enum: ["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "SUBSCRIBE", "CONTACT_US", "DOWNLOAD", "GET_QUOTE", "BOOK_TRAVEL", "APPLY_NOW", "GET_OFFER"],
+              },
               finalUrl: { type: "string", format: "uri" },
               metaTargeting: {
                 type: "object",
@@ -193,6 +198,16 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
                   required: ["text", "matchType"],
                   additionalProperties: false,
                 },
+              },
+              googleAd: {
+                type: "object",
+                description: "Obrigatorio junto de googleKeywords. Variacoes de texto do Responsive Search Ad.",
+                properties: {
+                  headlines: { type: "array", items: { type: "string", maxLength: 30 }, minItems: 3, maxItems: 15 },
+                  descriptions: { type: "array", items: { type: "string", maxLength: 90 }, minItems: 2, maxItems: 4 },
+                },
+                required: ["headlines", "descriptions"],
+                additionalProperties: false,
               },
             },
             required: [

@@ -36,14 +36,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const connection = await prisma.providerConnection.create({
-      data: {
+    // Um usuario so pode ter uma conexao por plataforma (ProviderConnection_userId_platform_key) -
+    // reconectar (ex: pra renovar um refresh token revogado) atualiza a conexao existente em vez
+    // de criar outra, senao AdCredential/marcas ja atribuidas a ela ficariam orfas de token valido.
+    const connection = await prisma.providerConnection.upsert({
+      where: { userId_platform: { userId, platform: "GOOGLE" } },
+      create: {
         userId,
         platform: "GOOGLE",
         label: "Google Ads",
         encryptedAccessToken: encryptSecret(accessToken),
         encryptedRefreshToken: encryptSecret(refreshToken),
         status: "CONNECTED",
+        lastCheckedAt: new Date(),
+      },
+      update: {
+        encryptedAccessToken: encryptSecret(accessToken),
+        encryptedRefreshToken: encryptSecret(refreshToken),
+        status: "CONNECTED",
+        lastError: null,
         lastCheckedAt: new Date(),
       },
     });

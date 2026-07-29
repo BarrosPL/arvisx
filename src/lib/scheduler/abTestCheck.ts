@@ -86,6 +86,7 @@ async function finalizeAbTest(test: AbTest): Promise<void> {
 
   const readiness = evaluateProposalReadiness({
     type: "PAUSE_AD",
+    platform: test.platform,
     platformCampaignId: null,
     platformAdId: loserAdId,
     metricsJson,

@@ -43,14 +43,29 @@ export async function GET(request: NextRequest) {
     const { accessToken, expiresInSeconds } = await exchangeForLongLivedToken(shortLivedToken);
     const accountName = await fetchMetaAccountName(accessToken);
 
-    const connection = await prisma.providerConnection.create({
-      data: {
+    const label = accountName ? `Meta — ${accountName}` : "Meta Ads";
+    const tokenExpiresAt = expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000) : null;
+
+    // Um usuario so pode ter uma conexao por plataforma (ProviderConnection_userId_platform_key) -
+    // reconectar (ex: pra renovar um token expirado) atualiza a conexao existente em vez de criar
+    // outra, senao AdCredential/marcas ja atribuidas a ela ficariam orfas de token valido.
+    const connection = await prisma.providerConnection.upsert({
+      where: { userId_platform: { userId, platform: "META" } },
+      create: {
         userId,
         platform: "META",
-        label: accountName ? `Meta — ${accountName}` : "Meta Ads",
+        label,
         encryptedAccessToken: encryptSecret(accessToken),
-        tokenExpiresAt: expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000) : null,
+        tokenExpiresAt,
         status: "CONNECTED",
+        lastCheckedAt: new Date(),
+      },
+      update: {
+        label,
+        encryptedAccessToken: encryptSecret(accessToken),
+        tokenExpiresAt,
+        status: "CONNECTED",
+        lastError: null,
         lastCheckedAt: new Date(),
       },
     });

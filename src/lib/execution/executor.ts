@@ -2,8 +2,30 @@ import { prisma } from "@/lib/prisma";
 import { ExecutionStatus, type ExecutionAction, type Proposal } from "@/generated/prisma/client";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
 import { toPlatformCredential } from "@/lib/ads/credentials";
-import { setMetaAdStatus, setMetaBudget, getMetaBudget, duplicateMetaAdWithBudget } from "@/lib/ads/metaWrite";
-import { setGoogleAdStatus, setGoogleCampaignBudget, getGoogleCampaignBudget } from "@/lib/ads/googleWrite";
+import type { CampaignPlan } from "@/lib/agent/schema";
+import {
+  setMetaAdStatus,
+  setMetaBudget,
+  getMetaBudget,
+  duplicateMetaAdWithBudget,
+  uploadMetaAdImage,
+  resolveMetaPageId,
+  searchMetaInterests,
+  createMetaCampaign,
+  createMetaAdSet,
+  createMetaAdCreative,
+  createMetaAd,
+} from "@/lib/ads/metaWrite";
+import {
+  setGoogleAdStatus,
+  setGoogleCampaignBudget,
+  getGoogleCampaignBudget,
+  createGoogleCampaignBudget,
+  createGoogleCampaign,
+  createGoogleAdGroup,
+  createGoogleKeywords,
+  createGoogleResponsiveSearchAd,
+} from "@/lib/ads/googleWrite";
 
 const AB_TEST_DURATION_DAYS = 7;
 
@@ -17,6 +39,12 @@ interface AbTestSetup {
   endsAt: Date;
 }
 
+interface CreatedIds {
+  platformCampaignId?: string;
+  platformAdSetId?: string;
+  platformAdId?: string;
+}
+
 interface DispatchResult {
   ok: boolean;
   requestJson: unknown;
@@ -24,6 +52,8 @@ interface DispatchResult {
   errorMessage?: string;
   rollbackInfoJson?: unknown;
   abTestSetup?: AbTestSetup;
+  /** So preenchido por NEW_CAMPAIGN - a proposta nao tinha IDs reais antes de executar. */
+  createdIds?: CreatedIds;
 }
 
 async function findCredential(brandId: string, platform: "META" | "GOOGLE") {
@@ -179,6 +209,225 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
     };
   }
 
+  if (proposal.type === "NEW_CAMPAIGN") {
+    const payload = proposal.payloadJson as { campaignPlan?: CampaignPlan } | null;
+    const plan = payload?.campaignPlan;
+    if (!plan) {
+      throw new Error("Proposta sem campaignPlan em payloadJson");
+    }
+
+    if (proposal.platform === "META") {
+      if (!plan.metaTargeting) {
+        throw new Error("campaignPlan sem metaTargeting (Meta)");
+      }
+      if (!proposal.creativeAssetData) {
+        throw new Error("Proposta sem imagem do anúncio anexada");
+      }
+
+      const imageBase64 = Buffer.from(proposal.creativeAssetData).toString("base64");
+      const uploadResult = await uploadMetaAdImage(credential, imageBase64);
+      if (!uploadResult.ok || !uploadResult.imageHash) {
+        return {
+          ok: false,
+          requestJson: { campaignName: plan.campaignName },
+          errorMessage: uploadResult.errorMessage ?? "Falha ao subir a imagem do anúncio",
+        };
+      }
+
+      const pageResult = await resolveMetaPageId(credential);
+      if (!pageResult.ok || !pageResult.pageId) {
+        return {
+          ok: false,
+          requestJson: { campaignName: plan.campaignName },
+          errorMessage: pageResult.errorMessage ?? "Falha ao resolver a Página do Facebook da conta",
+        };
+      }
+
+      const interestIds: string[] = [];
+      for (const interest of plan.metaTargeting.interests) {
+        const matches = await searchMetaInterests(credential, interest);
+        if (matches.length === 0) {
+          return {
+            ok: false,
+            requestJson: { campaignName: plan.campaignName },
+            errorMessage: `Não foi possível resolver o interesse "${interest}" no Meta`,
+          };
+        }
+        interestIds.push(matches[0].id);
+      }
+
+      const campaignResult = await createMetaCampaign(credential, {
+        name: plan.campaignName,
+        dailyBudgetMinorUnits: Math.round(plan.dailyBudget * 100),
+      });
+      if (!campaignResult.ok || !campaignResult.campaignId) {
+        return {
+          ok: false,
+          requestJson: { campaignName: plan.campaignName },
+          errorMessage: campaignResult.errorMessage ?? "Falha ao criar a campanha",
+        };
+      }
+
+      const adSetResult = await createMetaAdSet(credential, {
+        campaignId: campaignResult.campaignId,
+        name: `${plan.campaignName} — AdSet`,
+        targeting: {
+          countries: plan.metaTargeting.countries,
+          ageMin: plan.metaTargeting.ageMin,
+          ageMax: plan.metaTargeting.ageMax,
+          interestIds,
+        },
+      });
+      if (!adSetResult.ok || !adSetResult.adSetId) {
+        return {
+          ok: false,
+          requestJson: { campaignId: campaignResult.campaignId },
+          errorMessage: adSetResult.errorMessage ?? "Falha ao criar o AdSet",
+          rollbackInfoJson: { platform: "META", campaignId: campaignResult.campaignId, note: "Campanha criada sem AdSet - pausar/apagar manualmente." },
+        };
+      }
+
+      const creativeResult = await createMetaAdCreative(credential, {
+        pageId: pageResult.pageId,
+        imageHash: uploadResult.imageHash,
+        headline: plan.headline,
+        primaryText: plan.primaryText,
+        description: plan.description,
+        callToAction: plan.callToAction,
+        linkUrl: plan.finalUrl,
+      });
+      if (!creativeResult.ok || !creativeResult.creativeId) {
+        return {
+          ok: false,
+          requestJson: { adSetId: adSetResult.adSetId },
+          errorMessage: creativeResult.errorMessage ?? "Falha ao criar o criativo",
+          rollbackInfoJson: { platform: "META", campaignId: campaignResult.campaignId, note: "Campanha/AdSet criados sem anúncio - pausar/apagar manualmente." },
+        };
+      }
+
+      const adResult = await createMetaAd(credential, {
+        adSetId: adSetResult.adSetId,
+        creativeId: creativeResult.creativeId,
+        name: plan.campaignName,
+      });
+      if (!adResult.ok || !adResult.adId) {
+        return {
+          ok: false,
+          requestJson: { creativeId: creativeResult.creativeId },
+          errorMessage: adResult.errorMessage ?? "Falha ao criar o anúncio",
+          rollbackInfoJson: { platform: "META", campaignId: campaignResult.campaignId, note: "Campanha/AdSet criados sem anúncio - pausar/apagar manualmente." },
+        };
+      }
+
+      return {
+        ok: true,
+        requestJson: { campaignName: plan.campaignName, dailyBudget: plan.dailyBudget },
+        responseJson: {
+          campaignId: campaignResult.campaignId,
+          adSetId: adSetResult.adSetId,
+          creativeId: creativeResult.creativeId,
+          adId: adResult.adId,
+        },
+        createdIds: {
+          platformCampaignId: campaignResult.campaignId,
+          platformAdSetId: adSetResult.adSetId,
+          platformAdId: adResult.adId,
+        },
+        rollbackInfoJson: {
+          platform: "META",
+          campaignId: campaignResult.campaignId,
+          note: "Pausar a campanha manualmente no Gerenciador de Anúncios pra reverter.",
+        },
+      };
+    }
+
+    // GOOGLE
+    if (!plan.googleKeywords || !plan.googleAd) {
+      throw new Error("campaignPlan sem googleKeywords/googleAd (Google)");
+    }
+
+    const budgetResult = await createGoogleCampaignBudget(credential, {
+      name: `${plan.campaignName} — Orçamento`,
+      dailyBudgetMicros: Math.round(plan.dailyBudget * 1_000_000),
+    });
+    if (!budgetResult.ok || !budgetResult.resourceName) {
+      return {
+        ok: false,
+        requestJson: { campaignName: plan.campaignName },
+        errorMessage: budgetResult.errorMessage ?? "Falha ao criar o orçamento da campanha",
+      };
+    }
+
+    const campaignResult = await createGoogleCampaign(credential, {
+      name: plan.campaignName,
+      budgetResourceName: budgetResult.resourceName,
+    });
+    if (!campaignResult.ok || !campaignResult.resourceName || !campaignResult.campaignId) {
+      return {
+        ok: false,
+        requestJson: { campaignName: plan.campaignName },
+        errorMessage: campaignResult.errorMessage ?? "Falha ao criar a campanha",
+      };
+    }
+
+    const adGroupResult = await createGoogleAdGroup(credential, {
+      campaignResourceName: campaignResult.resourceName,
+      name: `${plan.campaignName} — Grupo de anúncios`,
+    });
+    if (!adGroupResult.ok || !adGroupResult.resourceName || !adGroupResult.adGroupId) {
+      return {
+        ok: false,
+        requestJson: { campaignId: campaignResult.campaignId },
+        errorMessage: adGroupResult.errorMessage ?? "Falha ao criar o grupo de anúncios",
+        rollbackInfoJson: { platform: "GOOGLE", campaignId: campaignResult.campaignId, note: "Campanha criada sem grupo de anúncios - pausar/remover manualmente." },
+      };
+    }
+
+    const keywordsResult = await createGoogleKeywords(credential, {
+      adGroupResourceName: adGroupResult.resourceName,
+      keywords: plan.googleKeywords,
+    });
+    if (!keywordsResult.ok) {
+      return {
+        ok: false,
+        requestJson: { adGroupId: adGroupResult.adGroupId },
+        errorMessage: keywordsResult.errorMessage ?? "Falha ao criar as palavras-chave",
+        rollbackInfoJson: { platform: "GOOGLE", campaignId: campaignResult.campaignId, note: "Campanha/grupo criados sem palavras-chave - pausar/remover manualmente." },
+      };
+    }
+
+    const adResult = await createGoogleResponsiveSearchAd(credential, {
+      adGroupResourceName: adGroupResult.resourceName,
+      headlines: plan.googleAd.headlines,
+      descriptions: plan.googleAd.descriptions,
+      finalUrl: plan.finalUrl,
+    });
+    if (!adResult.ok || !adResult.adId) {
+      return {
+        ok: false,
+        requestJson: { adGroupId: adGroupResult.adGroupId },
+        errorMessage: adResult.errorMessage ?? "Falha ao criar o anúncio (Responsive Search Ad)",
+        rollbackInfoJson: { platform: "GOOGLE", campaignId: campaignResult.campaignId, note: "Campanha/grupo criados sem anúncio - pausar/remover manualmente." },
+      };
+    }
+
+    return {
+      ok: true,
+      requestJson: { campaignName: plan.campaignName, dailyBudget: plan.dailyBudget },
+      responseJson: { campaignId: campaignResult.campaignId, adGroupId: adGroupResult.adGroupId, adId: adResult.adId },
+      createdIds: {
+        platformCampaignId: campaignResult.campaignId,
+        platformAdSetId: adGroupResult.adGroupId,
+        platformAdId: adResult.adId,
+      },
+      rollbackInfoJson: {
+        platform: "GOOGLE",
+        campaignId: campaignResult.campaignId,
+        note: "Pausar a campanha manualmente no Google Ads pra reverter.",
+      },
+    };
+  }
+
   throw new Error(`Tipo de proposta ${proposal.type} ainda nao suporta execucao automatica`);
 }
 
@@ -209,7 +458,21 @@ export async function executeProposal(proposalId: string, userId: string) {
   const newStatus: ProposalStatus = dispatch.ok ? "EXECUTED" : "EXECUTION_FAILED";
   assertProposalTransition(proposal.status as ProposalStatus, newStatus);
 
-  await prisma.proposal.update({ where: { id: proposalId }, data: { status: newStatus } });
+  await prisma.proposal.update({
+    where: { id: proposalId },
+    data: {
+      status: newStatus,
+      // So NEW_CAMPAIGN preenche isto - a proposta nao tinha IDs reais antes de
+      // executar, diferente dos outros tipos (que ja agiam sobre algo existente).
+      ...(dispatch.ok && dispatch.createdIds
+        ? {
+            platformCampaignId: dispatch.createdIds.platformCampaignId,
+            platformAdSetId: dispatch.createdIds.platformAdSetId,
+            platformAdId: dispatch.createdIds.platformAdId,
+          }
+        : {}),
+    },
+  });
 
   const executionLog = await prisma.executionLog.create({
     data: {

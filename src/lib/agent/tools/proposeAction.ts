@@ -16,6 +16,7 @@ export interface ProposeActionContext {
 export async function proposeAction(ctx: ProposeActionContext, payload: ProposalPayload) {
   const readiness = evaluateProposalReadiness({
     type: payload.type,
+    platform: payload.platform,
     platformCampaignId: payload.platformCampaignId,
     platformAdId: payload.platformAdId,
     metricsJson: payload.metricsJson,

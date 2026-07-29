@@ -109,6 +109,7 @@ enum ExecutionAction {
   ADJUST_BUDGET
   CREATE_AD_VARIATION
   CREATE_AB_TEST
+  NEW_CAMPAIGN
 
   @@schema("arvisx")
 }
@@ -214,6 +215,7 @@ model ProviderConnection {
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments AdCredential[]
 
+  @@unique([userId, platform])
   @@schema("arvisx")
 }
 

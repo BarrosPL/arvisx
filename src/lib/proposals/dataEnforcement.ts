@@ -9,6 +9,7 @@ export type ProposalTypeInput =
 
 export interface ProposalReadinessInput {
   type: ProposalTypeInput;
+  platform: "META" | "GOOGLE" | null;
   platformCampaignId: string | null;
   platformAdId: string | null;
   metricsJson: Record<string, unknown> | null;
@@ -47,14 +48,18 @@ function hasFinancialMetric(metrics: Record<string, unknown> | null): boolean {
  * pra aprovacao se citar um campaign_id/ad_id real e uma metrica financeira real - caso
  * contrario fica marcada como faltando dado, em vez de pedir aprovacao no escuro.
  *
- * NEW_CAMPAIGN sempre nasce NEEDS_MORE_DATA: o criativo/segmentacao ja vem completo no
- * payload (campaignPlan, validado pelo zod antes desta funcao rodar), mas a imagem do
- * anuncio ainda nao existe nesse momento - so um humano anexa ela depois, na revisao da
- * proposta (rota /api/proposals/[id]/creative-asset), o que transiciona pra PENDING.
+ * NEW_CAMPAIGN no Meta sempre nasce NEEDS_MORE_DATA: o criativo/segmentacao ja vem
+ * completo no payload (campaignPlan, validado pelo zod antes desta funcao rodar), mas a
+ * imagem do anuncio ainda nao existe nesse momento - so um humano anexa ela depois, na
+ * revisao da proposta (rota /api/proposals/[id]/creative-asset), o que transiciona pra
+ * PENDING. NEW_CAMPAIGN no Google (Responsive Search Ad - so texto, sem imagem) ja pode
+ * nascer PENDING direto, o campaignPlan.googleAd ja cobre o que falta.
  */
 export function evaluateProposalReadiness(input: ProposalReadinessInput): ProposalReadinessResult {
   if (input.type === "NEW_CAMPAIGN") {
-    return { ready: false, missing: ["imagem do anúncio"] };
+    return input.platform === "GOOGLE"
+      ? { ready: true, missing: [] }
+      : { ready: false, missing: ["imagem do anúncio"] };
   }
 
   if (!EXISTING_CAMPAIGN_ACTIONS.has(input.type)) {

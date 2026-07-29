@@ -31,6 +31,7 @@ import { proposalStatusTone } from "@/lib/proposals/status";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
 import { StatusBadge } from "@/components/status-badge";
+import type { CampaignPlan } from "@/lib/agent/schema";
 
 export const TYPE_LABEL: Record<string, string> = {
   NEW_CAMPAIGN: "Nova campanha",
@@ -110,7 +111,130 @@ function describeExecution(proposal: ProposalView): string {
         : "com uma verba diferente";
     return `Vai criar uma CÓPIA real deste anúncio ${budgetText}, reaproveitando a mesma imagem/texto, e rodar os dois em paralelo por 7 dias. Ao final, o sistema compara os resultados reais e recomenda um vencedor.`;
   }
+  if (proposal.type === "NEW_CAMPAIGN") {
+    const plan = proposal.campaignPlan;
+    const budgetText = plan ? `${formatCurrency(plan.dailyBudget)}/dia` : "a verba definida no plano";
+    return `Vai criar uma campanha NOVA de verdade na plataforma (${budgetText}), já ativa, cobrando de verdade a partir de agora — não é revertida automaticamente.`;
+  }
   return "Vai executar esta ação na plataforma.";
+}
+
+/** Resumo legivel do plano estruturado (payloadJson.campaignPlan) - so existe quando type=NEW_CAMPAIGN. */
+function CampaignPlanSummary({ plan, platform }: { plan: CampaignPlan; platform: string | null }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">{plan.campaignName}</span>
+        <span className="font-semibold">{formatCurrency(plan.dailyBudget)}/dia</span>
+      </div>
+      {platform === "GOOGLE" && plan.googleAd ? (
+        <>
+          <p>
+            <span className="font-medium">Headlines: </span>
+            {plan.googleAd.headlines.join(" · ")}
+          </p>
+          <p>
+            <span className="font-medium">Descriptions: </span>
+            {plan.googleAd.descriptions.join(" · ")}
+          </p>
+          {plan.googleKeywords ? (
+            <p>
+              <span className="font-medium">Palavras-chave: </span>
+              {plan.googleKeywords.map((k) => `${k.text} (${k.matchType})`).join(", ")}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p>
+            <span className="font-medium">{plan.headline}</span> — {plan.primaryText}
+          </p>
+          {plan.metaTargeting ? (
+            <p className="text-muted-foreground">
+              {plan.metaTargeting.countries.join(", ")} · {plan.metaTargeting.ageMin}-{plan.metaTargeting.ageMax}{" "}
+              anos · interesses: {plan.metaTargeting.interests.join(", ")}
+            </p>
+          ) : null}
+        </>
+      )}
+      <p className="truncate text-muted-foreground">{plan.finalUrl}</p>
+    </div>
+  );
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Unica forma de tirar uma proposta NEW_CAMPAIGN (Meta) de NEEDS_MORE_DATA - a JAMILE
+ * nunca gera/promete a imagem, so um humano anexa aqui (ver /api/proposals/[id]/creative-asset).
+ */
+function CreativeAssetUpload({ proposalId, onDone }: { proposalId: string; onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const next = event.target.files?.[0] ?? null;
+    setFile(next);
+    setPreviewUrl(next ? URL.createObjectURL(next) : null);
+  }
+
+  async function handleSubmit() {
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const dataBase64 = await fileToBase64(file);
+      const response = await fetch(`/api/proposals/${proposalId}/creative-asset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataBase64, mimeType: file.type }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(body.error ?? "Falha ao anexar imagem.");
+        return;
+      }
+      toast.success("Imagem anexada — proposta liberada para aprovação.");
+      onDone();
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+      <p>Falta anexar a imagem do anúncio — a JAMILE nunca gera uma, isso é feito por um humano.</p>
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        onChange={handleFileChange}
+        className="text-xs file:mr-2 file:rounded-full file:border-0 file:bg-foreground file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-background"
+      />
+      {previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={previewUrl} alt="Pré-visualização da imagem anexada" className="h-24 w-auto rounded-lg border object-cover" />
+      ) : null}
+      <Button
+        size="sm"
+        variant="default"
+        className="w-fit rounded-full"
+        disabled={!file || isUploading}
+        onClick={handleSubmit}
+      >
+        Anexar e enviar para aprovação
+      </Button>
+    </div>
+  );
 }
 
 export interface ProposalAbTestView {
@@ -144,6 +268,10 @@ export interface ProposalView {
   lastExecutionError?: string | null;
   /** Presente quando essa proposta gerou um teste A/B real em execucao/concluido. */
   abTest?: ProposalAbTestView | null;
+  /** So relevante para type=NEW_CAMPAIGN - nunca manda os bytes da imagem, so se ja tem uma. */
+  hasCreativeAsset?: boolean;
+  /** Plano estruturado da campanha nova (payloadJson.campaignPlan) - so quando type=NEW_CAMPAIGN. */
+  campaignPlan?: CampaignPlan | null;
 }
 
 type DecisionAction = "approve" | "reject" | "test" | "adjust" | "reopen";
@@ -516,7 +644,13 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
           </div>
         ) : null}
 
-        {isNeedsData ? (
+        {proposal.campaignPlan ? (
+          <CampaignPlanSummary plan={proposal.campaignPlan} platform={proposal.platform} />
+        ) : null}
+
+        {isNeedsData && proposal.type === "NEW_CAMPAIGN" ? (
+          <CreativeAssetUpload proposalId={proposal.id} onDone={() => router.refresh()} />
+        ) : isNeedsData ? (
           <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             Aguardando um campaign_id/ad_id e métrica financeira reais antes de poder ir para aprovação.
           </p>

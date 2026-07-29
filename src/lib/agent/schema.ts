@@ -20,6 +20,22 @@ export const platformSchema = z.enum(["META", "GOOGLE"]);
  * A imagem do anuncio NAO faz parte disto - e anexada por um humano depois, na revisao da
  * proposta (ver Proposal.creativeAssetData) - a JAMILE nunca gera/promete uma imagem.
  */
+// Subconjunto dos tipos de call_to_action que a Graph API do Meta realmente aceita em
+// object_story_spec.link_data.call_to_action.type (createMetaAdCreative) - texto livre
+// e rejeitado pela API, tem que ser um destes valores exatos.
+export const META_CTA_TYPES = [
+  "LEARN_MORE",
+  "SHOP_NOW",
+  "SIGN_UP",
+  "SUBSCRIBE",
+  "CONTACT_US",
+  "DOWNLOAD",
+  "GET_QUOTE",
+  "BOOK_TRAVEL",
+  "APPLY_NOW",
+  "GET_OFFER",
+] as const;
+
 export const campaignPlanSchema = z
   .object({
     campaignName: z.string().min(3),
@@ -27,7 +43,9 @@ export const campaignPlanSchema = z
     headline: z.string().min(3),
     primaryText: z.string().min(10),
     description: z.string().min(3),
-    callToAction: z.string().min(2),
+    // So usado no Meta (object_story_spec.call_to_action.type) - o Google RSA nao tem
+    // campo de call-to-action.
+    callToAction: z.enum(META_CTA_TYPES),
     finalUrl: z.string().url(),
     // Meta: paises/idade/interesses em portugues simples - a resolucao pro ID real do
     // interesse (Graph API nao aceita palavra livre) acontece so na hora de executar.
@@ -44,9 +62,22 @@ export const campaignPlanSchema = z
       .array(z.object({ text: z.string().min(1), matchType: z.enum(["BROAD", "PHRASE", "EXACT"]) }))
       .min(3)
       .optional(),
+    // Google: um Responsive Search Ad exige varias variacoes de headline/description (a
+    // API recusa com menos) - os campos unicos headline/primaryText/description acima
+    // foram pensados pro Meta (um so anuncio de imagem) e nao servem pro RSA do Google.
+    googleAd: z
+      .object({
+        headlines: z.array(z.string().min(1).max(30)).min(3).max(15),
+        descriptions: z.array(z.string().min(1).max(90)).min(2).max(4),
+      })
+      .optional(),
   })
   .refine((plan) => plan.metaTargeting || plan.googleKeywords, {
     message: "campaignPlan precisa de metaTargeting (Meta) ou googleKeywords (Google)",
+  })
+  .refine((plan) => !plan.googleKeywords || plan.googleAd, {
+    message: "campaignPlan pro Google precisa de googleAd (headlines/descriptions do Responsive Search Ad)",
+    path: ["googleAd"],
   });
 
 export type CampaignPlan = z.infer<typeof campaignPlanSchema>;
