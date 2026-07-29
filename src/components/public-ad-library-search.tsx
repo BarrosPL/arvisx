@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Search } from "lucide-react";
+import { AlertCircle, ExternalLink, Search, SearchX } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 
 interface PublicAdLibraryItem {
   id: string;
@@ -15,15 +16,63 @@ interface PublicAdLibraryItem {
   snapshotUrl: string | null;
 }
 
+const BODY_PREVIEW_LENGTH = 220;
+
+function AdLibraryCard({ item }: { item: PublicAdLibraryItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = (item.bodyText?.length ?? 0) > BODY_PREVIEW_LENGTH;
+  const text = !item.bodyText
+    ? null
+    : expanded || !isLong
+      ? item.bodyText
+      : `${item.bodyText.slice(0, BODY_PREVIEW_LENGTH)}…`;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-sm">
+      <p className="truncate text-sm font-medium">{item.pageName ?? "Página desconhecida"}</p>
+      {text ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-muted-foreground text-pretty">{text}</p>
+          {isLong ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="w-fit text-xs font-medium text-primary hover:underline"
+            >
+              {expanded ? "Ver menos" : "Ver mais"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-2 border-t pt-2 text-[11px] text-muted-foreground">
+        <span>{item.deliveryStartDate ? `Desde ${item.deliveryStartDate}` : "—"}</span>
+        {item.snapshotUrl ? (
+          <a
+            href={item.snapshotUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-primary hover:underline"
+          >
+            Ver anúncio <ExternalLink className="size-3" />
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function PublicAdLibrarySearch({ brandId }: { brandId: string }) {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [items, setItems] = useState<PublicAdLibraryItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState("");
 
   async function handleSearch() {
     const trimmed = query.trim();
     if (trimmed.length < 2) return;
     setIsSearching(true);
+    setError(null);
     try {
       const response = await fetch(`/api/brands/${brandId}/library/search-public`, {
         method: "POST",
@@ -32,10 +81,13 @@ export function PublicAdLibrarySearch({ brandId }: { brandId: string }) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        toast.error(body.error ?? "Falha ao pesquisar a biblioteca pública.");
-        setItems([]);
+        const message = body.error ?? "Falha ao pesquisar a biblioteca pública.";
+        toast.error(message);
+        setError(message);
+        setItems(null);
         return;
       }
+      setLastQuery(trimmed);
       setItems(body.items ?? []);
     } finally {
       setIsSearching(false);
@@ -68,31 +120,35 @@ export function PublicAdLibrarySearch({ brandId }: { brandId: string }) {
           </Button>
         </div>
 
-        {items === null ? null : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum anúncio público encontrado para essa busca.</p>
-        ) : (
+        {error ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : null}
+
+        {items === null && !error ? (
+          <EmptyState
+            icon={Search}
+            title="Pesquise um tema pra começar"
+            description="Digite uma palavra-chave do seu mercado e veja anúncios reais e públicos de qualquer anunciante — use como referência de criativo e mensagem."
+          />
+        ) : items !== null && items.length === 0 ? (
+          <EmptyState
+            icon={SearchX}
+            title={`Nenhum anúncio público encontrado para "${lastQuery}"`}
+            description="Tente um termo mais genérico ou em outra variação — a busca depende do texto exato usado nos anúncios reais."
+          />
+        ) : items !== null && items.length > 0 ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <div key={item.id} className="flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-sm">
-                <p className="truncate text-sm font-medium">{item.pageName ?? "Página desconhecida"}</p>
-                {item.bodyText ? <p className="line-clamp-4 text-xs text-muted-foreground">{item.bodyText}</p> : null}
-                <div className="flex items-center justify-between gap-2 border-t pt-2 text-[11px] text-muted-foreground">
-                  <span>{item.deliveryStartDate ? `Desde ${item.deliveryStartDate}` : "—"}</span>
-                  {item.snapshotUrl ? (
-                    <a
-                      href={item.snapshotUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-primary hover:underline"
-                    >
-                      Ver anúncio <ExternalLink className="size-3" />
-                    </a>
-                  ) : null}
-                </div>
-              </div>
+              <AdLibraryCard key={item.id} item={item} />
             ))}
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

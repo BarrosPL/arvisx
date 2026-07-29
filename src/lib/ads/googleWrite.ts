@@ -77,6 +77,10 @@ export async function setGoogleAdStatus(
   }
 }
 
+// ---------------------------------------------------------------------------
+// NEW_CAMPAIGN placeholder note:
+// ---------------------------------------------------------------------------
+
 /** Le o orcamento diario atual da campanha (em micros - 1_000_000 micros = 1 unidade monetaria). */
 export async function getGoogleCampaignBudget(
   credential: PlatformCredential,

@@ -12,8 +12,49 @@ export const proposalTypeSchema = z.enum([
 
 export const platformSchema = z.enum(["META", "GOOGLE"]);
 
-/** Payload estruturado que a tool `propose_action` recebe do modelo. */
-export const proposalPayloadSchema = z.object({
+/**
+ * Plano estruturado de uma campanha nova (so usado quando type=NEW_CAMPAIGN) - criativo e
+ * segmentacao 100% escritos pela JAMILE, nao clonados de um anuncio existente. Objetivo
+ * fica implicito em trafego/cliques (sem Pixel/conversion tracking configurado em lugar
+ * nenhum do sistema hoje, otimizar por conversao/lead nao teria como funcionar direito).
+ * A imagem do anuncio NAO faz parte disto - e anexada por um humano depois, na revisao da
+ * proposta (ver Proposal.creativeAssetData) - a JAMILE nunca gera/promete uma imagem.
+ */
+export const campaignPlanSchema = z
+  .object({
+    campaignName: z.string().min(3),
+    dailyBudget: z.number().positive(),
+    headline: z.string().min(3),
+    primaryText: z.string().min(10),
+    description: z.string().min(3),
+    callToAction: z.string().min(2),
+    finalUrl: z.string().url(),
+    // Meta: paises/idade/interesses em portugues simples - a resolucao pro ID real do
+    // interesse (Graph API nao aceita palavra livre) acontece so na hora de executar.
+    metaTargeting: z
+      .object({
+        countries: z.array(z.string()).min(1),
+        ageMin: z.number().min(18).max(65),
+        ageMax: z.number().min(18).max(65),
+        interests: z.array(z.string()).min(1),
+      })
+      .optional(),
+    // Google: so Search, keywords literais (sem resolucao de ID necessaria).
+    googleKeywords: z
+      .array(z.object({ text: z.string().min(1), matchType: z.enum(["BROAD", "PHRASE", "EXACT"]) }))
+      .min(3)
+      .optional(),
+  })
+  .refine((plan) => plan.metaTargeting || plan.googleKeywords, {
+    message: "campaignPlan precisa de metaTargeting (Meta) ou googleKeywords (Google)",
+  });
+
+export type CampaignPlan = z.infer<typeof campaignPlanSchema>;
+
+/** Forma base do payload (ZodObject puro, sem refine) - `proposalPayloadChatSchema` precisa
+ * partir daqui com `.extend()` antes de aplicar o refine de NEW_CAMPAIGN (ZodEffects, o tipo
+ * que sai de `.refine()`, nao tem `.extend()`). */
+const proposalPayloadObjectSchema = z.object({
   type: proposalTypeSchema,
   title: z.string().min(3),
   reason: z.string().min(10),
@@ -25,6 +66,16 @@ export const proposalPayloadSchema = z.object({
   platformCampaignId: z.string().nullable(),
   platformAdId: z.string().nullable(),
   platformAdSetId: z.string().nullable(),
+  campaignPlan: campaignPlanSchema.optional(),
+});
+
+const requireCampaignPlanForNewCampaign = (payload: { type: string; campaignPlan?: unknown }) =>
+  payload.type !== "NEW_CAMPAIGN" || payload.campaignPlan !== undefined;
+
+/** Payload estruturado que a tool `propose_action` recebe do modelo. */
+export const proposalPayloadSchema = proposalPayloadObjectSchema.refine(requireCampaignPlanForNewCampaign, {
+  message: "NEW_CAMPAIGN exige campaignPlan",
+  path: ["campaignPlan"],
 });
 
 export type ProposalPayload = z.infer<typeof proposalPayloadSchema>;
@@ -71,3 +122,51 @@ export const searchPublicAdLibraryArgsSchema = z.object({
 });
 
 export type SearchPublicAdLibraryArgs = z.infer<typeof searchPublicAdLibraryArgsSchema>;
+
+/**
+ * Variantes "Chat" dos schemas acima - usadas so pelo chat por usuario
+ * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a marca por
+ * chamada em vez de uma marca fixa no contexto. Cada uma adiciona "brandId"
+ * (obrigatorio) ao schema original; o resto dos campos e identico.
+ */
+export const getRankingChatArgsSchema = z.object({
+  brandId: z.string(),
+});
+
+export type GetRankingChatArgs = z.infer<typeof getRankingChatArgsSchema>;
+
+export const getMetricsChatArgsSchema = getMetricsArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetMetricsChatArgs = z.infer<typeof getMetricsChatArgsSchema>;
+
+export const getMetricsHistoryChatArgsSchema = getMetricsHistoryArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetMetricsHistoryChatArgs = z.infer<typeof getMetricsHistoryChatArgsSchema>;
+
+export const getAdBudgetChatArgsSchema = getAdBudgetArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetAdBudgetChatArgs = z.infer<typeof getAdBudgetChatArgsSchema>;
+
+export const getAdLibraryChatArgsSchema = getAdLibraryArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetAdLibraryChatArgs = z.infer<typeof getAdLibraryChatArgsSchema>;
+
+export const searchPublicAdLibraryChatArgsSchema = searchPublicAdLibraryArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type SearchPublicAdLibraryChatArgs = z.infer<typeof searchPublicAdLibraryChatArgsSchema>;
+
+export const proposalPayloadChatSchema = proposalPayloadObjectSchema
+  .extend({ brandId: z.string() })
+  .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] });
+
+export type ProposalPayloadChat = z.infer<typeof proposalPayloadChatSchema>;

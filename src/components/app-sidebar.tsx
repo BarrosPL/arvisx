@@ -11,13 +11,14 @@ import {
   KeyRound,
   LayoutDashboard,
   ListChecks,
-  MessageSquare,
   Plug,
   Plus,
   Wand2,
 } from "lucide-react";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
+import { StatusBadge } from "@/components/status-badge";
+import { brandStatusTone } from "@/lib/brands/status";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -56,18 +57,17 @@ interface NavItem {
   color: IconBadgeColor;
 }
 
-const GLOBAL_NAV: NavItem[] = [
+export const GLOBAL_NAV: NavItem[] = [
   { href: "/dashboard", label: "Visão Geral", icon: LayoutDashboard, color: "blue" },
   { href: "/connections", label: "Conexões", icon: Plug, color: "violet" },
 ];
 
-function brandNavFor(slug: string): NavItem[] {
+export function brandNavFor(slug: string): NavItem[] {
   const base = `/brands/${slug}`;
   return [
     { href: base, label: "Visão geral", icon: LayoutDashboard, color: "blue" },
-    { href: `${base}/credentials`, label: "Credenciais", icon: KeyRound, color: "violet" },
+    { href: `${base}/credentials`, label: "Contas e campanhas", icon: KeyRound, color: "violet" },
     { href: `${base}/library`, label: "Biblioteca", icon: Image, color: "orange" },
-    { href: `${base}/chat`, label: "Chat", icon: MessageSquare, color: "green" },
     { href: `${base}/proposals`, label: "Propostas", icon: ListChecks, color: "amber" },
   ];
 }
@@ -119,8 +119,15 @@ export function AppSidebar({
                     <LayoutDashboard className="size-3" />
                   </div>
                 )}
-                <span className="flex-1 truncate font-medium group-data-[collapsible=icon]:hidden">
-                  {activeBrand ? activeBrand.name : "Visão Geral"}
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
+                  <span className="truncate font-medium leading-tight">
+                    {activeBrand ? activeBrand.name : "Visão Geral"}
+                  </span>
+                  {activeBrand ? (
+                    <StatusBadge {...brandStatusTone(activeBrand.status)} className="h-4 w-fit px-1.5 text-[10px]" />
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Trocar de marca</span>
+                  )}
                 </span>
                 <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
               </PopoverTrigger>
@@ -142,7 +149,8 @@ export function AppSidebar({
                             className={cn("mr-2 size-4", activeBrand?.id === brand.id ? "opacity-100" : "opacity-0")}
                           />
                           <BrandAvatar name={brand.name} seed={brand.id} size="xs" className="mr-1.5" />
-                          {brand.name}
+                          <span className="flex-1 truncate">{brand.name}</span>
+                          <StatusBadge {...brandStatusTone(brand.status)} className="h-4 shrink-0 px-1.5 text-[10px]" />
                         </CommandItem>
                       ))}
                       <CommandItem value="nova-marca" onSelect={() => goTo("/brands/new")}>
@@ -164,7 +172,12 @@ export function AppSidebar({
                 const active = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton isActive={active} tooltip={item.label} render={<Link href={item.href} />}>
+                    <SidebarMenuButton
+                      isActive={active}
+                      tooltip={item.label}
+                      render={<Link href={item.href} />}
+                      className="relative data-active:bg-primary/8 data-active:text-primary data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-primary"
+                    >
                       <IconBadge icon={item.icon} color={item.color} size="xs" />
                       <span>{item.label}</span>
                     </SidebarMenuButton>

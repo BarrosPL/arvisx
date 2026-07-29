@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PlatformIconTile } from "@/components/brand-marks";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { BrandCombobox, type BrandComboboxOption } from "@/components/brand-combobox";
+import { StatusBadge, type StatusTone } from "@/components/status-badge";
 
 type Platform = "META" | "GOOGLE";
 type Status = "PENDING" | "CONNECTED" | "AUTH_ERROR" | "DISCONNECTED";
@@ -41,11 +41,11 @@ const STATUS_LABEL: Record<Status, string> = {
   DISCONNECTED: "Desconectada",
 };
 
-const STATUS_VARIANT: Record<Status, "default" | "secondary" | "outline" | "destructive"> = {
-  PENDING: "secondary",
-  CONNECTED: "default",
-  AUTH_ERROR: "destructive",
-  DISCONNECTED: "outline",
+const STATUS_TONE: Record<Status, StatusTone> = {
+  PENDING: "neutral",
+  CONNECTED: "success",
+  AUTH_ERROR: "danger",
+  DISCONNECTED: "neutral",
 };
 
 const PLATFORM_LABEL: Record<Platform, string> = { META: "Meta Ads", GOOGLE: "Google Ads" };
@@ -76,9 +76,7 @@ function PlatformStatusTile({
       <div className="flex flex-1 flex-col gap-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium">{PLATFORM_LABEL[platform]}</span>
-          <Badge variant={connected ? "default" : "secondary"}>
-            {connected ? "Conectado" : "Pendente"}
-          </Badge>
+          <StatusBadge tone={connected ? "success" : "neutral"} label={connected ? "Conectado" : "Pendente"} />
         </div>
         {connected ? (
           <span className="text-xs text-muted-foreground">Login conectado</span>
@@ -295,16 +293,17 @@ function ConnectionCard({
             <span className="truncate font-medium">
               {connection.label ?? PLATFORM_LABEL[connection.platform]}
             </span>
-            <Badge variant={STATUS_VARIANT[connection.status]}>
-              {STATUS_LABEL[connection.status]}
-            </Badge>
+            <StatusBadge tone={STATUS_TONE[connection.status]} label={STATUS_LABEL[connection.status]} />
           </div>
           <span className="truncate text-xs text-muted-foreground">
             {connection.assignmentsCount} conta(s) atribuída(s) · última checagem:{" "}
             {connection.lastCheckedAt ? new Date(connection.lastCheckedAt).toLocaleString("pt-BR") : "nunca"}
           </span>
           {connection.lastError ? (
-            <span className="truncate text-xs text-destructive">{connection.lastError}</span>
+            <span className="flex items-center gap-1 truncate text-xs text-destructive">
+              <AlertCircle className="size-3 shrink-0" />
+              {connection.lastError}
+            </span>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -314,6 +313,7 @@ function ConnectionCard({
             disabled={isBusy}
             onClick={handleHealthCheck}
             title="Testar conexão"
+            aria-label="Testar conexão"
           >
             <RefreshCw />
           </Button>
@@ -323,6 +323,7 @@ function ConnectionCard({
             disabled={isBusy}
             onClick={handleDisconnect}
             title="Desconectar"
+            aria-label="Desconectar"
           >
             <Trash2 />
           </Button>

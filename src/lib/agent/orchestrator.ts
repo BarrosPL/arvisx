@@ -1,27 +1,20 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { prisma } from "@/lib/prisma";
 import { openai, AGENT_MODEL } from "@/lib/openai";
-import { buildSystemPrompt } from "@/lib/agent/persona";
-import { TOOL_DEFS, dispatchTool } from "@/lib/agent/tools";
-import { validateInbound, validateOutbound } from "@/lib/brands/firewall";
+import { buildUserScopedSystemPrompt } from "@/lib/agent/persona";
+import { TOOL_DEFS_CHAT, dispatchChatTool, extractBrandIdFromArgs, type ChatToolContext } from "@/lib/agent/tools";
 import type { Message } from "@/generated/prisma/client";
 
 const MAX_ITERATIONS = 8;
+const MAX_HISTORY_MESSAGES = 40;
 
-const FIREWALL_INBOUND_REFUSAL =
-  "Essa pergunta toca em um tema de outra marca do grupo, então não posso responder por aqui. Se for sobre outro negócio, procure a JAMILE na marca correspondente.";
-
-const FIREWALL_OUTBOUND_FALLBACK =
-  "Não consigo compartilhar essa resposta porque ela tocaria em outra marca do grupo. Pode reformular a pergunta focando só nesta marca?";
-
-/** Uma marca tem uma unica conversa continua com a JAMILE - cria na primeira mensagem. */
-export async function getOrCreateBrandThread(brandId: string, userId: string) {
-  const existing = await prisma.conversationThread.findFirst({
-    where: { brandId, userId },
-    orderBy: { createdAt: "asc" },
+/** Uma unica conversa continua por usuario - cria na primeira mensagem. */
+export async function getOrCreateUserThread(userId: string) {
+  return prisma.conversationThread.upsert({
+    where: { userId },
+    update: {},
+    create: { userId },
   });
-  if (existing) return existing;
-  return prisma.conversationThread.create({ data: { brandId, userId } });
 }
 
 function safeJsonParse(raw: string): unknown {
@@ -48,46 +41,56 @@ function mapHistoryToOpenAi(messages: Message[]): ChatCompletionMessageParam[] {
 }
 
 /**
- * Roda um turno completo do agente: valida entrada -> loop de tool-calling -> valida saida.
+ * Roda um turno completo do agente: carrega as marcas do usuario -> loop de
+ * tool-calling (cada chamada escolhe/valida sua propria marca) -> resposta final.
  * Toda saida do fluxo grava uma Message(ASSISTANT) - nao existe caminho de silencio.
+ *
+ * Isolamento entre marcas: nao existe mais um "brandId" fixo pro turno inteiro (o
+ * chat e por usuario, pode falar de varias marcas na mesma conversa/mensagem). A
+ * garantia real - marca X nunca ve dado da marca Y - vem de dispatchChatTool validar
+ * o brandId de CADA chamada contra a lista real de BrandAccess do usuario
+ * (assertBrandAccess em agent/tools/index.ts) antes de ler/escrever qualquer coisa.
+ * Isso e imposto em codigo, no ponto exato onde o dado e acessado - por isso o
+ * bloqueio de topico por palavra-chave (lib/brands/firewall.ts) foi retirado deste
+ * fluxo: ele nunca validou acesso a dado, so bloqueava topico, e discutir varias
+ * marcas do proprio usuario na mesma conversa agora e o comportamento esperado.
  */
 export async function runAgentTurn(threadId: string, userText: string): Promise<Message[]> {
   const thread = await prisma.conversationThread.findUniqueOrThrow({
     where: { id: threadId },
-    include: { brand: true },
   });
 
   const userMessage = await prisma.message.create({
     data: { threadId, role: "USER", content: userText },
   });
 
-  const firewallBrand = { id: thread.brand.id, excludedKeywords: thread.brand.excludedKeywords };
-  const firewallIn = await validateInbound(firewallBrand, userText);
+  const brands = await prisma.brand.findMany({
+    where: { brandAccess: { some: { userId: thread.userId } } },
+    orderBy: { priorityOrder: "asc" },
+    select: { id: true, slug: true, name: true, status: true },
+  });
+  const allowedBrandIds = new Set(brands.map((brand) => brand.id));
 
-  if (!firewallIn.allowed) {
-    const refusal = await prisma.message.create({
-      data: { threadId, role: "ASSISTANT", content: FIREWALL_INBOUND_REFUSAL },
-    });
-    await prisma.conversationThread.update({ where: { id: threadId }, data: { lastMessageAt: new Date() } });
-    return [userMessage, refusal];
-  }
-
-  const history = await prisma.message.findMany({ where: { threadId }, orderBy: { createdAt: "asc" } });
+  const history = await prisma.message.findMany({
+    where: { threadId },
+    orderBy: { createdAt: "asc" },
+  });
 
   const openaiMessages: ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt(thread.brand) },
-    ...mapHistoryToOpenAi(history),
+    { role: "system", content: buildUserScopedSystemPrompt(brands) },
+    ...mapHistoryToOpenAi(history.slice(-MAX_HISTORY_MESSAGES)),
   ];
 
   const toolMessages: Message[] = [];
-  const ctx = { brandId: thread.brandId, threadId };
+  const ctx: ChatToolContext = { userId: thread.userId, threadId, allowedBrandIds };
+  const turnBrandIds = new Set<string>();
   let finalText: string | null = null;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const completion = await openai.chat.completions.create({
       model: AGENT_MODEL,
       messages: openaiMessages,
-      tools: TOOL_DEFS,
+      tools: TOOL_DEFS_CHAT,
     });
 
     const message = completion.choices[0].message;
@@ -102,12 +105,16 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
     for (const toolCall of message.tool_calls) {
       if (toolCall.type !== "function") continue;
 
-      const result = await dispatchTool(toolCall.function.name, toolCall.function.arguments, ctx);
+      const callBrandId = extractBrandIdFromArgs(toolCall.function.arguments);
+      if (callBrandId) turnBrandIds.add(callBrandId);
+
+      const result = await dispatchChatTool(toolCall.function.name, toolCall.function.arguments, ctx);
       const resultJson = JSON.parse(JSON.stringify(result));
 
       const toolMessage = await prisma.message.create({
         data: {
           threadId,
+          brandId: callBrandId,
           role: "TOOL",
           content: JSON.stringify(result),
           toolName: toolCall.function.name,
@@ -127,14 +134,52 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
     finalText = fallback.choices[0]?.message.content ?? "Não consegui concluir a análise agora - tente novamente em instantes.";
   }
 
-  const firewallOut = await validateOutbound(firewallBrand, finalText);
-  const safeFinalText = firewallOut.allowed ? finalText : FIREWALL_OUTBOUND_FALLBACK;
-
   const assistantMessage = await prisma.message.create({
-    data: { threadId, role: "ASSISTANT", content: safeFinalText },
+    data: {
+      threadId,
+      brandId: turnBrandIds.size === 1 ? [...turnBrandIds][0] : null,
+      role: "ASSISTANT",
+      content: finalText,
+    },
   });
 
   await prisma.conversationThread.update({ where: { id: threadId }, data: { lastMessageAt: new Date() } });
 
   return [userMessage, ...toolMessages, assistantMessage];
+}
+
+export interface ChatMessageView {
+  id: string;
+  role: string;
+  content: string;
+  toolName: string | null;
+  brandId: string | null;
+  brandName: string | null;
+  brandSlug: string | null;
+  createdAt: string;
+}
+
+/** Denormaliza nome/slug da marca em cada mensagem (quando houver brandId) pra UI
+ * mostrar de qual marca um turno tratava, e pra montar links (ex: "ver proposta")
+ * sem precisar de mais uma chamada do client. */
+export async function toChatMessageViews(messages: Message[]): Promise<ChatMessageView[]> {
+  const brandIds = [...new Set(messages.map((m) => m.brandId).filter((id): id is string => id !== null))];
+  const brands = brandIds.length
+    ? await prisma.brand.findMany({ where: { id: { in: brandIds } }, select: { id: true, name: true, slug: true } })
+    : [];
+  const brandById = new Map(brands.map((b) => [b.id, b]));
+
+  return messages.map((message) => {
+    const brand = message.brandId ? brandById.get(message.brandId) : undefined;
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      toolName: message.toolName,
+      brandId: message.brandId,
+      brandName: brand?.name ?? null,
+      brandSlug: brand?.slug ?? null,
+      createdAt: message.createdAt.toISOString(),
+    };
+  });
 }

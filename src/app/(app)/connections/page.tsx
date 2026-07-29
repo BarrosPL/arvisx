@@ -6,6 +6,8 @@ import { ConnectionsManager, type ConnectionItem } from "@/components/connection
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
 import { autoProvisionBrandsForConnection } from "@/lib/brands/autoProvision";
+import { PageHeader } from "@/components/page-header";
+import { CheckCircle2 } from "lucide-react";
 
 interface PageProps {
   searchParams: Promise<{ oauth_error?: string; connected?: string }>;
@@ -66,15 +68,18 @@ export default async function ConnectionsPage({ searchParams }: PageProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Conexões</h1>
-        <p className="text-sm text-muted-foreground">
-          Logins Meta e Google Ads conectados por você. Cada conta descoberta já vira sua própria
-          marca automaticamente — mova pra outra marca abaixo se quiser consolidar.
-        </p>
-      </div>
+      <PageHeader
+        title="Conexões"
+        description="Logins Meta e Google Ads conectados por você. Cada conta descoberta já vira sua própria marca automaticamente."
+      />
       {connected ? (
-        <p className="text-sm text-foreground">Conectado com sucesso — suas contas já viraram marcas.</p>
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success"
+        >
+          <CheckCircle2 className="size-4 shrink-0" />
+          Conectado com sucesso — suas contas já viraram marcas.
+        </div>
       ) : null}
       <ConnectionsManager
         initialConnections={items}

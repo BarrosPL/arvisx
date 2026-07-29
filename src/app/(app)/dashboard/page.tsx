@@ -1,30 +1,44 @@
 import Link from "next/link";
+import { Building2, Clock, Inbox, Wallet } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
-import { ProposalCard, type ProposalView, type ProposalAbTestView } from "@/components/proposal-card";
+import { type ProposalAbTestView } from "@/components/proposal-card";
+import { ProposalSummaryRow } from "@/components/proposal-summary-row";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
-
-const VERDICT_LABEL: Record<string, string> = {
-  BOM: "Bom",
-  MEDIO: "Estável",
-  RUIM: "Precisa de ação",
-};
-
-const VERDICT_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
-  BOM: "default",
-  MEDIO: "secondary",
-  RUIM: "destructive",
-};
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { AttentionItem } from "@/components/attention-item";
+import { verdictTone } from "@/lib/ranking/verdictLabels";
 
 function currency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
 }
+
+function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
+  if (!Array.isArray(recommendedActionsJson) || recommendedActionsJson.length === 0) return undefined;
+  const first = recommendedActionsJson[0];
+  if (first && typeof first === "object" && "reason" in first) {
+    const reason = (first as { reason?: unknown }).reason;
+    return typeof reason === "string" ? reason : undefined;
+  }
+  return undefined;
+}
+
+interface AttentionEntry {
+  key: string;
+  tone: "danger" | "warning";
+  title: string;
+  description?: string;
+  href: string;
+}
+
+const MAX_ATTENTION_ITEMS = 6;
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -60,7 +74,7 @@ export default async function DashboardPage() {
     }),
     prisma.schedulerRun.findFirst({
       orderBy: { startedAt: "desc" },
-      include: { brandResults: true },
+      include: { brandResults: { include: { brand: { select: { id: true, name: true, slug: true } } } } },
     }),
     // groupBy+_sum somaria toda a serie historica (AdMetricSnapshot acumula uma linha
     // por coleta desde que paramos de apagar - lib/ads/collect.ts). Por isso busca so
@@ -98,7 +112,7 @@ export default async function DashboardPage() {
                 resultSummary: (proposal.abTest.resultSummary as ProposalAbTestView["resultSummary"]) ?? null,
               }
             : null,
-        } as ProposalView,
+        },
       }))
     )
     .sort((a, b) => (a.proposal.createdAt < b.proposal.createdAt ? 1 : -1));
@@ -115,71 +129,160 @@ export default async function DashboardPage() {
   const totalSpend = Array.from(spendByBrandId.values()).reduce((sum, value) => sum + value, 0);
   const activeBrandsCount = brands.filter((brand) => brand.status === "ACTIVE").length;
 
-  const statTiles = [
-    { label: "Marcas ativas", value: String(activeBrandsCount) },
-    { label: "Propostas pendentes", value: String(allOpenProposals.length) },
-    { label: "Investimento total", value: currency(totalSpend) },
-    {
-      label: "Última análise",
-      value: runSummary ? runSummary.startedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—",
-    },
-  ];
+  const attentionItems: AttentionEntry[] = [];
+
+  for (const { brand, proposal } of allOpenProposals) {
+    if (proposal.status === "EXECUTION_FAILED") {
+      attentionItems.push({
+        key: `exec-${proposal.id}`,
+        tone: "danger",
+        title: `Falha ao executar: ${proposal.title}`,
+        description: proposal.lastExecutionError ? `${brand.name} · ${proposal.lastExecutionError}` : brand.name,
+        href: `/brands/${brand.slug}/proposals`,
+      });
+    }
+  }
+  if (latestRun) {
+    for (const result of latestRun.brandResults) {
+      if (result.outcome === "error") {
+        attentionItems.push({
+          key: `run-${result.id}`,
+          tone: "danger",
+          title: `Falha na última análise de ${result.brand.name}`,
+          description: result.errorMessage ?? undefined,
+          href: `/brands/${result.brand.slug}`,
+        });
+      }
+    }
+  }
+  for (const { brand, proposal } of allOpenProposals) {
+    if (proposal.status === "NEEDS_MORE_DATA") {
+      attentionItems.push({
+        key: `data-${proposal.id}`,
+        tone: "warning",
+        title: `Precisa de mais dados: ${proposal.title}`,
+        description: brand.name,
+        href: `/brands/${brand.slug}/proposals`,
+      });
+    }
+  }
+  for (const brand of brands) {
+    const snapshot = brand.rankingSnapshots[0];
+    if (snapshot?.verdict === "RUIM") {
+      const reason = firstRecommendedReason(snapshot.recommendedActionsJson);
+      attentionItems.push({
+        key: `verdict-${brand.id}`,
+        tone: "warning",
+        title: `${brand.name} precisa de atenção`,
+        description: reason ? `Diagnóstico: ${reason}` : undefined,
+        href: `/brands/${brand.slug}`,
+      });
+    }
+  }
+
+  const visibleAttentionItems = attentionItems.slice(0, MAX_ATTENTION_ITEMS);
+  const hiddenAttentionCount = attentionItems.length - visibleAttentionItems.length;
+
+  const greetingName = session!.user.name ?? session!.user.email?.split("@")[0] ?? "";
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Visão geral</h1>
-          <p className="text-sm text-muted-foreground">
-            {runSummary
-              ? `Última análise automática: ${runSummary.startedAt.toLocaleString("pt-BR")} · ${runSummary.created} proposta(s) nova(s) · ${runSummary.noAction} marca(s) sem ação${runSummary.errors > 0 ? ` · ${runSummary.errors} erro(s)` : ""}`
-              : "A primeira análise automática da JAMILE ainda vai rodar em instantes."}
-          </p>
+      <PageHeader
+        title={greetingName ? `Olá, ${greetingName}` : "Visão geral"}
+        description={
+          runSummary
+            ? `Última análise automática em ${runSummary.startedAt.toLocaleString("pt-BR")}`
+            : "A primeira análise automática da JAMILE ainda vai rodar em instantes."
+        }
+        actions={<RunAnalysisButton />}
+      />
+
+      {runSummary ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <StatusBadge tone="success" label={`${runSummary.created} proposta(s) nova(s)`} />
+          <StatusBadge tone="neutral" label={`${runSummary.noAction} marca(s) sem ação`} />
+          {runSummary.errors > 0 ? (
+            <StatusBadge tone="danger" label={`${runSummary.errors} erro(s) na coleta`} />
+          ) : null}
         </div>
-        <RunAnalysisButton />
-      </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {statTiles.map((tile) => (
-          <Card key={tile.label} className="shadow-sm">
-            <CardContent className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tile.label}</span>
-              <span className="text-2xl font-semibold tracking-tight">{tile.value}</span>
-            </CardContent>
-          </Card>
-        ))}
+        <StatCard
+          label="Marcas ativas"
+          value={activeBrandsCount}
+          icon={Building2}
+          context={`de ${brands.length} marca(s) no total`}
+        />
+        <StatCard
+          label="Propostas pendentes"
+          value={allOpenProposals.length}
+          icon={Inbox}
+          tone={allOpenProposals.length > 0 ? "warning" : "default"}
+        />
+        <StatCard label="Investimento total" value={currency(totalSpend)} icon={Wallet} />
+        <StatCard
+          label="Última análise"
+          value={runSummary ? runSummary.startedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+          icon={Clock}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {brands.map((brand) => {
-          const ranking = brand.rankingSnapshots[0];
-          const spend = spendByBrandId.get(brand.id) ?? 0;
-          return (
-            <Link key={brand.id} href={`/brands/${brand.slug}`} className="group">
-              <Card className="h-full shadow-sm transition-colors group-hover:border-foreground/20">
-                <CardHeader className="flex flex-row items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Atenção necessária</h2>
+        {visibleAttentionItems.length === 0 ? (
+          <EmptyState
+            title="Nada precisa da sua atenção agora"
+            description="Sem falhas de execução, propostas travadas ou marcas em mau estado no momento."
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {visibleAttentionItems.map((item) => (
+              <AttentionItem key={item.key} tone={item.tone} title={item.title} description={item.description} href={item.href} />
+            ))}
+            {hiddenAttentionCount > 0 ? (
+              <span className="text-xs text-muted-foreground">e mais {hiddenAttentionCount} item(ns)</span>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Marcas</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {brands.map((brand) => {
+            const ranking = brand.rankingSnapshots[0];
+            const spend = spendByBrandId.get(brand.id) ?? 0;
+            const verdict = ranking ? verdictTone(ranking.verdict) : null;
+            return (
+              <Link
+                key={brand.id}
+                href={`/brands/${brand.slug}`}
+                className="group flex h-full flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:border-foreground/20 hover:border-foreground/20"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-3">
                     <BrandAvatar name={brand.name} seed={brand.id} size="sm" />
-                    <CardTitle className="text-base">{brand.name}</CardTitle>
+                    <span className="truncate font-medium">{brand.name}</span>
                   </div>
-                  {ranking ? (
-                    <Badge variant={VERDICT_VARIANT[ranking.verdict] ?? "outline"}>
-                      {VERDICT_LABEL[ranking.verdict] ?? ranking.verdict}
-                    </Badge>
-                  ) : null}
-                </CardHeader>
-                <CardContent className="flex items-center justify-between text-sm text-muted-foreground">
+                  {verdict ? (
+                    <StatusBadge tone={verdict.tone} label={verdict.label} className="shrink-0" />
+                  ) : (
+                    <StatusBadge tone="neutral" label="Sem dados" className="shrink-0" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
                   <span>{spend > 0 ? `${currency(spend)} investidos` : "sem dados coletados"}</span>
                   <span>
                     {brand.proposals.length > 0
                       ? `${brand.proposals.length} proposta(s) aberta(s)`
                       : "sem proposta pendente"}
                   </span>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -187,11 +290,16 @@ export default async function DashboardPage() {
           Propostas aguardando decisão ({allOpenProposals.length})
         </h2>
         {allOpenProposals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma proposta pendente em nenhuma marca no momento.</p>
+          <EmptyState
+            title="Nenhuma proposta pendente"
+            description="Nenhuma marca tem proposta aberta no momento. Novas propostas aparecem aqui assim que a JAMILE encontrar uma oportunidade ou risco."
+          />
         ) : (
-          allOpenProposals.map(({ brand, proposal }) => (
-            <ProposalCard key={proposal.id} proposal={proposal} brand={brand} />
-          ))
+          <div className="flex flex-col gap-2">
+            {allOpenProposals.map(({ brand, proposal }) => (
+              <ProposalSummaryRow key={proposal.id} proposal={proposal} brand={brand} />
+            ))}
+          </div>
         )}
       </div>
     </div>

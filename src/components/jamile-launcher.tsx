@@ -1,0 +1,92 @@
+"use client";
+
+import { createContext, useContext, useEffect, useState } from "react";
+import { Sparkles, X } from "lucide-react";
+import { ChatPanel, type ChatMessageView } from "@/components/chat-panel";
+import { cn } from "@/lib/utils";
+
+interface JamileChatContextValue {
+  open: boolean;
+  openChat: () => void;
+  closeChat: () => void;
+  toggleChat: () => void;
+}
+
+const JamileChatContext = createContext<JamileChatContextValue | null>(null);
+
+/** Deixa qualquer componente da árvore abrir o popup da JAMILE (ex: um botão
+ * "Falar com a JAMILE" numa página de marca), sem precisar saber como o painel
+ * é montado/carregado - só chama openChat(). */
+export function useJamileChat(): JamileChatContextValue {
+  const ctx = useContext(JamileChatContext);
+  if (!ctx) throw new Error("useJamileChat precisa estar dentro de <JamileProvider>");
+  return ctx;
+}
+
+/**
+ * Provedor + popup da JAMILE, montado uma unica vez em (app)/layout.tsx - fica
+ * disponivel em qualquer pagina do app, e o estado aberto/fechado + a thread
+ * carregada sobrevivem a navegacao entre paginas porque o layout nao remonta esse
+ * componente ao trocar de rota dentro do grupo (app).
+ */
+export function JamileProvider({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [messages, setMessages] = useState<ChatMessageView[]>([]);
+
+  useEffect(() => {
+    if (!open || loaded) return;
+    let cancelled = false;
+    fetch("/api/chat")
+      .then((response) => response.json())
+      .then((body) => {
+        if (cancelled) return;
+        setMessages(body.messages ?? []);
+        setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, loaded]);
+
+  const openChat = () => setOpen(true);
+  const closeChat = () => setOpen(false);
+  const toggleChat = () => setOpen((v) => !v);
+
+  return (
+    <JamileChatContext.Provider value={{ open, openChat, closeChat, toggleChat }}>
+      {children}
+
+      {/* z-[60], acima do painel (z-50) - o botao continua clicavel mesmo quando o
+          painel esta aberto e ocupa a mesma quina inferior direita (vira o controle
+          de fechar tambem, em vez de ficar escondido atras do painel). */}
+      <button
+        type="button"
+        onClick={toggleChat}
+        aria-label={open ? "Fechar chat da JAMILE" : "Abrir chat da JAMILE"}
+        className="ai-gradient-bg fixed right-6 bottom-6 z-[60] flex size-14 items-center justify-center rounded-full text-white shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {open ? <X className="size-6" /> : <Sparkles className="size-6" />}
+      </button>
+
+      {open ? (
+        <div
+          className={cn(
+            "fixed z-50 flex flex-col overflow-hidden rounded-xl border bg-card shadow-2xl",
+            "inset-x-4 bottom-24 top-20",
+            "md:inset-auto md:top-auto md:right-6 md:bottom-24 md:h-[560px] md:w-[400px]",
+            "lg:h-[45vh] lg:max-h-[720px] lg:min-h-[420px] lg:w-[45vw] lg:max-w-[640px] lg:min-w-[380px]"
+          )}
+        >
+          {!loaded ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              Carregando conversa...
+            </div>
+          ) : (
+            <ChatPanel initialMessages={messages} onClose={closeChat} className="border-0 shadow-none" />
+          )}
+        </div>
+      ) : null}
+    </JamileChatContext.Provider>
+  );
+}

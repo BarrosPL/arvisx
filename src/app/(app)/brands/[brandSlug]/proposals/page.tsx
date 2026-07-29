@@ -1,13 +1,13 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ProposalCard, type ProposalView, type ProposalAbTestView } from "@/components/proposal-card";
+import { type ProposalView, type ProposalAbTestView } from "@/components/proposal-card";
+import { ProposalsBoard } from "@/components/proposals-board";
+import { PageHeader } from "@/components/page-header";
 
 interface PageProps {
   params: Promise<{ brandSlug: string }>;
 }
-
-const ACTIONABLE_STATUSES = new Set(["PENDING", "NEEDS_MORE_DATA", "APPROVED", "TEST", "ADJUST", "EXECUTION_FAILED"]);
 
 function toProposalView(proposal: {
   id: string;
@@ -77,35 +77,15 @@ export default async function BrandProposalsPage({ params }: PageProps) {
     include: { executions: { orderBy: { executedAt: "desc" }, take: 1 }, abTest: true },
   });
 
-  const awaitingDecision = proposals.filter((p) => ACTIONABLE_STATUSES.has(p.status));
-  const history = proposals.filter((p) => !ACTIONABLE_STATUSES.has(p.status));
+  const proposalViews = proposals.map(toProposalView);
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Fila de propostas</h2>
-        <p className="text-sm text-muted-foreground">
-          Toda ação que a JAMILE recomenda vira uma proposta aqui - nada é executado sem aprovação.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Aguardando decisão</h3>
-        {awaitingDecision.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma proposta pendente no momento.</p>
-        ) : (
-          awaitingDecision.map((proposal) => <ProposalCard key={proposal.id} proposal={toProposalView(proposal)} />)
-        )}
-      </div>
-
-      {history.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-medium text-muted-foreground">Histórico</h3>
-          {history.map((proposal) => (
-            <ProposalCard key={proposal.id} proposal={toProposalView(proposal)} />
-          ))}
-        </div>
-      ) : null}
+      <PageHeader
+        title="Propostas"
+        description="Toda ação que a JAMILE recomenda vira uma proposta aqui — nada é executado sem sua aprovação."
+      />
+      <ProposalsBoard proposals={proposalViews} />
     </div>
   );
 }

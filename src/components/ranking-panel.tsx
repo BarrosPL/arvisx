@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FUNNEL_LABEL, FUNNEL_CLASSNAME } from "@/lib/ranking/funnelLabels";
+import { StatusBadge } from "@/components/status-badge";
+import { verdictTone } from "@/lib/ranking/verdictLabels";
+import { cn } from "@/lib/utils";
 
 type Verdict = "BOM" | "MEDIO" | "RUIM";
 
@@ -38,16 +41,10 @@ export interface RankingView {
   recommendedActions: RecommendedActionView[];
 }
 
-const VERDICT_LABEL: Record<Verdict, string> = {
-  BOM: "Bom, com oportunidade de escala",
-  MEDIO: "Estável, sem decisão forte",
-  RUIM: "Precisa de ação",
-};
-
-const VERDICT_VARIANT: Record<Verdict, "default" | "secondary" | "destructive"> = {
-  BOM: "default",
-  MEDIO: "secondary",
-  RUIM: "destructive",
+const VERDICT_BORDER: Record<Verdict, string> = {
+  BOM: "border-l-4 border-l-success",
+  MEDIO: "border-l-4 border-l-border",
+  RUIM: "border-l-4 border-l-destructive",
 };
 
 function currency(value: number) {
@@ -75,11 +72,11 @@ export function RankingPanel({ brandId, initial }: { brandId: string; initial: R
 
   return (
     <Card className="shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div className="flex items-center gap-2">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-base">Diagnóstico de tráfego</CardTitle>
           {ranking ? (
-            <Badge variant={VERDICT_VARIANT[ranking.verdict]}>{VERDICT_LABEL[ranking.verdict]}</Badge>
+            <StatusBadge tone={verdictTone(ranking.verdict).tone} label={verdictTone(ranking.verdict).label} />
           ) : null}
         </div>
         <Button variant="outline" size="sm" onClick={handleRecompute} disabled={isRecomputing}>
@@ -100,7 +97,7 @@ export function RankingPanel({ brandId, initial }: { brandId: string; initial: R
         ) : (
           <div className="flex flex-col gap-3">
             {ranking.recommendedActions.map((action, index) => (
-              <div key={index} className="rounded-lg border p-3">
+              <div key={index} className={cn("rounded-lg border bg-card p-3", VERDICT_BORDER[action.verdict])}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-sm font-medium">
@@ -112,7 +109,7 @@ export function RankingPanel({ brandId, initial }: { brandId: string; initial: R
                       </Badge>
                     ) : null}
                   </div>
-                  <Badge variant={VERDICT_VARIANT[action.verdict]}>{action.reason}</Badge>
+                  <StatusBadge tone={verdictTone(action.verdict).tone} label={action.reason} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {action.row.platform} · investimento {currency(action.row.spend)} · CTR{" "}

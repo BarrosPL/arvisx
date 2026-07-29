@@ -138,7 +138,7 @@ model Brand {
   credentials      AdCredential[]
   metricSnapshots  AdMetricSnapshot[]
   rankingSnapshots RankingSnapshot[]
-  threads          ConversationThread[]
+  messages         Message[]
   proposals        Proposal[]
   executionLogs    ExecutionLog[]
   schedulerResults SchedulerBrandResult[]
@@ -286,24 +286,25 @@ model RankingSnapshot {
 
 model ConversationThread {
   id            String    @id @default(cuid())
-  brandId       String
-  userId        String
+  userId        String    @unique
   title         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lastMessageAt DateTime?
 
-  brand     Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
   proposals Proposal[]
-
-  @@index([brandId, updatedAt])
 }
 
 model Message {
   id             String      @id @default(cuid())
   threadId       String
+  // Marca que essa mensagem/tool call especifica tratava - null pra mensagens sem uma
+  // marca clara (ex: saudacao). Nao substitui a validacao de acesso feita por chamada
+  // de tool (assertBrandAccess em lib/agent/tools/index.ts) - e so pra exibir de qual
+  // marca o turno falava na UI.
+  brandId        String?
   role           MessageRole
   content        String      @db.Text
   toolName       String?
@@ -315,35 +316,41 @@ model Message {
   createdAt      DateTime    @default(now())
 
   thread ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  brand  Brand?             @relation(fields: [brandId], references: [id], onDelete: SetNull)
 
   @@index([threadId, createdAt])
+  @@index([brandId, createdAt])
 }
 
 model Proposal {
-  id                 String         @id @default(cuid())
-  brandId            String
-  threadId           String?
-  createdByUserId    String? // null quando criado pelo scheduler/agente de forma autonoma
-  type               ProposalType
-  status             ProposalStatus @default(PENDING)
-  title              String
-  reason             String         @db.Text
-  metricsJson        Json // metricas citadas para justificar a recomendacao
-  suggestedAction    String         @db.Text
-  risk               String         @db.Text
-  rollbackPlan       String         @db.Text
-  platform           Platform?
-  platformCampaignId String?
-  platformAdId       String?
+  id                    String         @id @default(cuid())
+  brandId               String
+  threadId              String?
+  createdByUserId       String? // null quando criado pelo scheduler/agente de forma autonoma
+  type                  ProposalType
+  status                ProposalStatus @default(PENDING)
+  title                 String
+  reason                String         @db.Text
+  metricsJson           Json // metricas citadas para justificar a recomendacao
+  suggestedAction       String         @db.Text
+  risk                  String         @db.Text
+  rollbackPlan          String         @db.Text
+  platform              Platform?
+  platformCampaignId    String?
+  platformAdId          String?
   // Meta: id do AdSet (onde a verba mora - necessario pra executar ADJUST_BUDGET).
   // Google: id do AdGroup (necessario pra executar PAUSE_AD/ACTIVATE_AD).
-  platformAdSetId    String?
-  payloadJson        Json // proposta estruturada completa (budget, creative brief, etc.)
-  decidedByUserId    String?
-  decidedAt          DateTime?
-  decisionNote       String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  platformAdSetId       String?
+  payloadJson           Json // proposta estruturada completa (budget, creative brief, etc.)
+  // So para NEW_CAMPAIGN: imagem do anuncio anexada por um humano na revisao (a JAMILE
+  // nunca gera/promete imagem - so texto/segmentacao/orcamento via payloadJson.campaignPlan).
+  creativeAssetData     Bytes?
+  creativeAssetMimeType String?
+  decidedByUserId       String?
+  decidedAt             DateTime?
+  decisionNote          String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   brand      Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
   thread     ConversationThread? @relation(fields: [threadId], references: [id])

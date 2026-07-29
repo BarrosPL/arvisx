@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 import { deriveInitialStatus, evaluateProposalReadiness } from "./dataEnforcement";
 
 describe("evaluateProposalReadiness", () => {
-  it("marca campanha nova como pronta mesmo sem IDs (é hipótese)", () => {
+  it("marca campanha nova como faltando dado até um humano anexar a imagem do anúncio", () => {
     const result = evaluateProposalReadiness({
       type: "NEW_CAMPAIGN",
       platformCampaignId: null,
       platformAdId: null,
       metricsJson: null,
     });
-    expect(result.ready).toBe(true);
-    expect(result.missing).toHaveLength(0);
-    expect(deriveInitialStatus(result)).toBe("PENDING");
+    expect(result.ready).toBe(false);
+    expect(result.missing).toEqual(["imagem do anúncio"]);
+    expect(deriveInitialStatus(result)).toBe("NEEDS_MORE_DATA");
   });
 
   it("recusa pausar anúncio existente sem campaign_id/ad_id nem métrica", () => {

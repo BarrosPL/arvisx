@@ -16,7 +16,6 @@ import {
   TriangleAlert,
   Undo2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,11 +27,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_VARIANT } from "@/lib/proposals/status";
+import { proposalStatusTone } from "@/lib/proposals/status";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
+import { StatusBadge } from "@/components/status-badge";
 
-const TYPE_LABEL: Record<string, string> = {
+export const TYPE_LABEL: Record<string, string> = {
   NEW_CAMPAIGN: "Nova campanha",
   PAUSE_AD: "Pausar anúncio",
   ACTIVATE_AD: "Ativar anúncio",
@@ -432,9 +432,11 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
             </div>
           </div>
         </div>
-        <Badge variant={PROPOSAL_STATUS_VARIANT[proposal.status] ?? "outline"} className="shrink-0">
-          {PROPOSAL_STATUS_LABEL[proposal.status] ?? proposal.status}
-        </Badge>
+        <StatusBadge
+          tone={proposalStatusTone(proposal.status).tone}
+          label={proposalStatusTone(proposal.status).label}
+          className="shrink-0"
+        />
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-col gap-2.5">

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { classifyFunnelStage } from "@/lib/ranking/funnel";
 import { CredentialsManager, type CredentialItem, type AdRowView } from "@/components/credentials-manager";
+import { PageHeader } from "@/components/page-header";
 
 interface PageProps {
   params: Promise<{ brandSlug: string }>;
@@ -80,13 +81,10 @@ export default async function BrandCredentialsPage({ params }: PageProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Credenciais — {brand.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          Contas de Meta Ads e Google Ads atribuídas a esta marca. Cada conta pertence a uma única
-          marca — nunca compartilhe a mesma conta entre marcas.
-        </p>
-      </div>
+      <PageHeader
+        title={`Contas e campanhas — ${brand.name}`}
+        description="Contas de Meta Ads e Google Ads atribuídas a esta marca, e os anúncios reais coletados de cada uma. Cada conta pertence a uma única marca — nunca compartilhe a mesma conta entre marcas."
+      />
       <CredentialsManager brandId={brand.id} initialCredentials={items} adsByCredential={adsByCredential} />
     </div>
   );

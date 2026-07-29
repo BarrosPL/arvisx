@@ -4,7 +4,13 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Settings2 } from "lucide-react";
 import { BrandForm, type BrandFormValues } from "@/components/brand-form";
 
-export function BrandAdvancedSettings({ initial }: { initial: BrandFormValues }) {
+export function BrandAdvancedSettings({
+  initial,
+  meta,
+}: {
+  initial: BrandFormValues;
+  meta?: { slug: string; role: string };
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -21,6 +27,7 @@ export function BrandAdvancedSettings({ initial }: { initial: BrandFormValues })
           <span className="text-sm font-medium">Configurações avançadas</span>
           <p className="text-xs text-muted-foreground">
             Nome, status, prioridade no scheduler e firewall de marca.
+            {meta ? ` Slug: ${meta.slug} · Seu papel: ${meta.role}.` : ""}
           </p>
         </div>
         <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
@@ -32,11 +39,10 @@ export function BrandAdvancedSettings({ initial }: { initial: BrandFormValues })
         <div className="flex flex-col gap-4 border-t p-4">
           <p className="text-sm text-muted-foreground">
             <strong className="text-foreground">Prioridade no scheduler</strong> define a ordem em
-            que a rodada automática de análise visita as marcas — ainda não tem efeito porque o
-            scheduler ainda não foi construído.{" "}
+            que a rodada automática de análise visita as marcas.{" "}
             <strong className="text-foreground">Palavras-chave</strong> alimentam o firewall de
-            marca: impedem que o agente de IA misture assuntos de marcas diferentes — também só
-            entra em ação quando o agente de chat existir.
+            marca: impedem que a JAMILE misture assuntos de marcas diferentes durante a análise e
+            o chat.
           </p>
           <BrandForm mode="edit" initial={initial} />
         </div>

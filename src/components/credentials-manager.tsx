@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { FUNNEL_LABEL, FUNNEL_CLASSNAME } from "@/lib/ranking/funnelLabels";
 import { adStatusStyle } from "@/lib/ads/statusStyle";
+import { StatusBadge, type StatusTone } from "@/components/status-badge";
 
 type Platform = "META" | "GOOGLE";
 
@@ -58,11 +59,11 @@ const STATUS_LABEL: Record<CredentialItem["status"], string> = {
   DISCONNECTED: "Desconectada",
 };
 
-const STATUS_VARIANT: Record<CredentialItem["status"], "default" | "secondary" | "outline" | "destructive"> = {
-  PENDING: "secondary",
-  CONNECTED: "default",
-  AUTH_ERROR: "destructive",
-  DISCONNECTED: "outline",
+const STATUS_TONE: Record<CredentialItem["status"], StatusTone> = {
+  PENDING: "neutral",
+  CONNECTED: "success",
+  AUTH_ERROR: "danger",
+  DISCONNECTED: "neutral",
 };
 
 const PLATFORM_LABEL: Record<Platform, string> = { META: "Meta Ads", GOOGLE: "Google Ads" };
@@ -184,9 +185,9 @@ export function CredentialsManager({
   return (
     <div className="flex flex-col gap-6">
       <Card className="shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">Contas atribuídas a esta marca</CardTitle>
-          <Button variant="outline" size="sm" render={<Link href="/connections" />} nativeButton={false}>
+          <Button variant="outline" size="sm" render={<Link href="/connections" />} nativeButton={false} className="shrink-0">
             Gerenciar em Conexões
           </Button>
         </CardHeader>
@@ -230,17 +231,23 @@ export function CredentialsManager({
                         )}
                       </TableCell>
                       <TableCell>{PLATFORM_LABEL[credential.platform]}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {credential.label ?? credential.externalAccountId}
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span>{credential.label ?? credential.externalAccountId}</span>
+                          {credential.label ? (
+                            <span className="text-xs text-muted-foreground">{credential.externalAccountId}</span>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{credential.connectionLabel ?? "-"}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <Badge variant={STATUS_VARIANT[credential.status]} className="w-fit">
-                            {STATUS_LABEL[credential.status]}
-                          </Badge>
+                          <StatusBadge tone={STATUS_TONE[credential.status]} label={STATUS_LABEL[credential.status]} className="w-fit" />
                           {credential.lastError ? (
-                            <span className="text-xs text-destructive">{credential.lastError}</span>
+                            <span className="flex items-center gap-1 text-xs text-destructive">
+                              <AlertCircle className="size-3 shrink-0" />
+                              {credential.lastError}
+                            </span>
                           ) : null}
                         </div>
                       </TableCell>

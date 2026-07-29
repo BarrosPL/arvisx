@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { KeyRound } from "lucide-react";
+import { KeyRound, ListChecks } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Badge } from "@/components/ui/badge";
-import { BRAND_STATUS_LABEL, BRAND_STATUS_VARIANT } from "@/lib/brands/status";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/status-badge";
+import { brandStatusTone } from "@/lib/brands/status";
 import { RankingPanel, type RankingView } from "@/components/ranking-panel";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { BrandAdvancedSettings } from "@/components/brand-advanced-settings";
+import { TalkToJamileButton } from "@/components/talk-to-jamile-button";
 
 interface PageProps {
   params: Promise<{ brandSlug: string }>;
@@ -48,28 +50,46 @@ export default async function BrandDetailPage({ params }: PageProps) {
       }
     : null;
 
+  const brandStatus = brandStatusTone(brand.status);
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
-        <BrandAvatar name={brand.name} seed={brand.id} size="lg" />
-        <div className="flex flex-1 flex-col gap-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-xl font-semibold tracking-tight">{brand.name}</h1>
-            <Badge variant={BRAND_STATUS_VARIANT[brand.status] ?? "outline"}>
-              {BRAND_STATUS_LABEL[brand.status] ?? brand.status}
-            </Badge>
+      <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center">
+        <div className="flex flex-1 items-center gap-4 min-w-0">
+          <BrandAvatar name={brand.name} seed={brand.id} size="lg" />
+          <div className="flex flex-1 flex-col gap-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-xl font-semibold tracking-tight">{brand.name}</h1>
+              <StatusBadge tone={brandStatus.tone} label={brandStatus.label} />
+            </div>
+            <p className="truncate text-sm text-muted-foreground">
+              {latestRanking
+                ? `Última análise: ${latestRanking.computedAt.toLocaleString("pt-BR")}`
+                : "Ainda sem análise"}
+            </p>
           </div>
-          <p className="truncate text-sm text-muted-foreground">
-            slug: {brand.slug} · seu papel: {access.role}
-          </p>
         </div>
-        <Link
-          href={`/brands/${brand.slug}/credentials`}
-          className="flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
-        >
-          <KeyRound className="size-4" />
-          {credentialsCount} conta{credentialsCount === 1 ? "" : "s"}
-        </Link>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            render={<Link href={`/brands/${brand.slug}/credentials`} />}
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+          >
+            <KeyRound />
+            {credentialsCount} conta{credentialsCount === 1 ? "" : "s"}
+          </Button>
+          <Button
+            render={<Link href={`/brands/${brand.slug}/proposals`} />}
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+          >
+            <ListChecks />
+            Propostas
+          </Button>
+          <TalkToJamileButton />
+        </div>
       </div>
 
       <RankingPanel brandId={brand.id} initial={rankingView} />
@@ -84,6 +104,7 @@ export default async function BrandDetailPage({ params }: PageProps) {
           topicKeywords: brand.topicKeywords,
           excludedKeywords: brand.excludedKeywords,
         }}
+        meta={{ slug: brand.slug, role: access.role }}
       />
     </div>
   );

@@ -46,8 +46,17 @@ function hasFinancialMetric(metrics: Record<string, unknown> | null): boolean {
  * hipotese (sem IDs ainda). Uma proposta que age sobre campanha EXISTENTE so esta pronta
  * pra aprovacao se citar um campaign_id/ad_id real e uma metrica financeira real - caso
  * contrario fica marcada como faltando dado, em vez de pedir aprovacao no escuro.
+ *
+ * NEW_CAMPAIGN sempre nasce NEEDS_MORE_DATA: o criativo/segmentacao ja vem completo no
+ * payload (campaignPlan, validado pelo zod antes desta funcao rodar), mas a imagem do
+ * anuncio ainda nao existe nesse momento - so um humano anexa ela depois, na revisao da
+ * proposta (rota /api/proposals/[id]/creative-asset), o que transiciona pra PENDING.
  */
 export function evaluateProposalReadiness(input: ProposalReadinessInput): ProposalReadinessResult {
+  if (input.type === "NEW_CAMPAIGN") {
+    return { ready: false, missing: ["imagem do anúncio"] };
+  }
+
   if (!EXISTING_CAMPAIGN_ACTIONS.has(input.type)) {
     return { ready: true, missing: [] };
   }

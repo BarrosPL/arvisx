@@ -272,3 +272,262 @@ export async function duplicateMetaAdWithBudget(
     return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Criacao de campanha nova do zero (NEW_CAMPAIGN) - criativo/segmentacao escritos pela
+// JAMILE (nao clonados de um anuncio existente, diferente de duplicateMetaAdWithBudget
+// acima). So chamadas por lib/execution/executor.ts, na ordem: uploadMetaAdImage ->
+// resolveMetaPageId -> searchMetaInterests (por interesse) -> createMetaCampaign ->
+// createMetaAdSet -> createMetaAdCreative -> createMetaAd.
+// ---------------------------------------------------------------------------
+
+export interface MetaInterest {
+  id: string;
+  name: string;
+}
+
+/** Resolve uma palavra-chave de interesse (texto livre, em portugues) pro ID real que a
+ * Graph API exige em targeting.flexible_spec - ela nao aceita texto livre diretamente.
+ * Pega o primeiro resultado devolvido pela propria busca da Meta (sem garantia de match
+ * semantico perfeito - e o que a Meta considera mais relevante pra aquele texto). */
+export async function searchMetaInterests(credential: PlatformCredential, query: string): Promise<MetaInterest[]> {
+  const url =
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/search` +
+    `?type=adinterest&q=${encodeURIComponent(query)}&access_token=${encodeURIComponent(credential.accessToken)}`;
+  const response = await fetch(url);
+  const body = (await response.json()) as MetaApiErrorResponse & { data?: { id: string; name: string }[] };
+  if (!response.ok || body.error) {
+    throw new Error(`Meta API error (buscar interesse "${query}"): ${body.error?.message ?? response.statusText}`);
+  }
+  return body.data ?? [];
+}
+
+/** Sobe uma imagem pra biblioteca de midia da conta (POST /adimages, aceita bytes base64
+ * direto num corpo JSON comum - sem precisar de multipart). Devolve o image_hash exigido
+ * por createMetaAdCreative. */
+export async function uploadMetaAdImage(
+  credential: PlatformCredential,
+  base64Data: string
+): Promise<{ ok: boolean; imageHash?: string; errorMessage?: string }> {
+  const accountId = toAccountId(credential.externalAccountId);
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/adimages?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bytes: base64Data }) }
+    );
+    const body = (await response.json()) as MetaApiErrorResponse & {
+      images?: Record<string, { hash?: string }>;
+    };
+    if (!response.ok || body.error) {
+      throw new Error(`Meta API error (subir imagem): ${body.error?.message ?? response.statusText}`);
+    }
+    const imageHash = Object.values(body.images ?? {})[0]?.hash;
+    if (!imageHash) {
+      throw new Error("Meta API nao devolveu image_hash para a imagem enviada");
+    }
+    return { ok: true, imageHash };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+/** Busca a(s) Pagina(s) do Facebook associada(s) a conta de anuncio - obrigatoria pra
+ * criar um Ad Creative (object_story_spec.page_id). Falha com erro claro se nao achar
+ * nenhuma ou achar mais de uma (nao adivinha qual usar). */
+export async function resolveMetaPageId(
+  credential: PlatformCredential
+): Promise<{ ok: boolean; pageId?: string; errorMessage?: string }> {
+  const accountId = toAccountId(credential.externalAccountId);
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/promote_pages?access_token=${encodeURIComponent(credential.accessToken)}`
+    );
+    const body = (await response.json()) as MetaApiErrorResponse & { data?: { id: string; name?: string }[] };
+    if (!response.ok || body.error) {
+      throw new Error(`Meta API error (buscar Pagina da conta): ${body.error?.message ?? response.statusText}`);
+    }
+    const pages = body.data ?? [];
+    if (pages.length === 0) {
+      throw new Error("Nenhuma Pagina do Facebook associada a esta conta de anuncio - conecte uma antes de criar campanha");
+    }
+    if (pages.length > 1) {
+      throw new Error(
+        `Mais de uma Pagina associada a conta (${pages.map((p) => p.name ?? p.id).join(", ")}) - nao e possivel escolher automaticamente`
+      );
+    }
+    return { ok: true, pageId: pages[0].id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+export interface CreateCampaignResult {
+  ok: boolean;
+  campaignId?: string;
+  errorMessage?: string;
+}
+
+/** Cria a Campanha em si - objetivo fixo em trafego (sem Pixel/Conversions API
+ * configurado em lugar nenhum do sistema hoje, nao ha como suportar otimizacao por
+ * conversao/lead direito). Nasce ACTIVE - a aprovacao humana ja aconteceu antes do
+ * Executar chamar isto, igual todo o resto do sistema. */
+export async function createMetaCampaign(
+  credential: PlatformCredential,
+  params: { name: string; dailyBudgetMinorUnits: number }
+): Promise<CreateCampaignResult> {
+  const accountId = toAccountId(credential.externalAccountId);
+  const body = {
+    name: params.name,
+    objective: "OUTCOME_TRAFFIC",
+    status: "ACTIVE",
+    special_ad_categories: [],
+    daily_budget: Math.round(params.dailyBudgetMinorUnits),
+  };
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/campaigns?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      throw new Error(`Meta API error (criar Campanha): ${result.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, campaignId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+export interface MetaAdSetTargeting {
+  countries: string[];
+  ageMin: number;
+  ageMax: number;
+  interestIds: string[];
+}
+
+export interface CreateAdSetResult {
+  ok: boolean;
+  adSetId?: string;
+  errorMessage?: string;
+}
+
+/** Cria o AdSet dentro da campanha ja criada - orcamento fica so na campanha (CBO),
+ * otimizacao fixa em cliques no link (mesmo motivo do objetivo em createMetaCampaign). */
+export async function createMetaAdSet(
+  credential: PlatformCredential,
+  params: { campaignId: string; name: string; targeting: MetaAdSetTargeting }
+): Promise<CreateAdSetResult> {
+  const accountId = toAccountId(credential.externalAccountId);
+  const targeting: Record<string, unknown> = {
+    geo_locations: { countries: params.targeting.countries },
+    age_min: params.targeting.ageMin,
+    age_max: params.targeting.ageMax,
+  };
+  if (params.targeting.interestIds.length > 0) {
+    targeting.flexible_spec = [{ interests: params.targeting.interestIds.map((id) => ({ id })) }];
+  }
+  const body = {
+    name: params.name,
+    campaign_id: params.campaignId,
+    optimization_goal: "LINK_CLICKS",
+    billing_event: "IMPRESSIONS",
+    targeting,
+    status: "ACTIVE",
+  };
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/adsets?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      throw new Error(`Meta API error (criar AdSet): ${result.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, adSetId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+export interface CreateAdCreativeResult {
+  ok: boolean;
+  creativeId?: string;
+  errorMessage?: string;
+}
+
+/** Cria o objeto de criativo (imagem + texto) - obrigatorio ter o page_id (ver
+ * resolveMetaPageId) e o image_hash (ver uploadMetaAdImage) antes de chamar isto. */
+export async function createMetaAdCreative(
+  credential: PlatformCredential,
+  params: {
+    pageId: string;
+    imageHash: string;
+    headline: string;
+    primaryText: string;
+    description: string;
+    callToAction: string;
+    linkUrl: string;
+  }
+): Promise<CreateAdCreativeResult> {
+  const accountId = toAccountId(credential.externalAccountId);
+  const body = {
+    name: params.headline,
+    object_story_spec: {
+      page_id: params.pageId,
+      link_data: {
+        image_hash: params.imageHash,
+        link: params.linkUrl,
+        message: params.primaryText,
+        name: params.headline,
+        description: params.description,
+        call_to_action: { type: params.callToAction, value: { link: params.linkUrl } },
+      },
+    },
+  };
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/adcreatives?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      throw new Error(`Meta API error (criar Ad Creative): ${result.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, creativeId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+export interface CreateAdResult {
+  ok: boolean;
+  adId?: string;
+  errorMessage?: string;
+}
+
+/** Ultimo passo: liga o AdSet + Creative num Anuncio de verdade, ja ACTIVE. */
+export async function createMetaAd(
+  credential: PlatformCredential,
+  params: { adSetId: string; creativeId: string; name: string }
+): Promise<CreateAdResult> {
+  const accountId = toAccountId(credential.externalAccountId);
+  const body = {
+    name: params.name,
+    adset_id: params.adSetId,
+    creative: { creative_id: params.creativeId },
+    status: "ACTIVE",
+  };
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/ads?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      throw new Error(`Meta API error (criar Ad): ${result.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, adId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
