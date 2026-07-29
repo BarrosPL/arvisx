@@ -82,6 +82,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/src/generated ./src/generated
 # node_modules completo (o build "standalone" do Next só traz o necessário pro
 # servidor rodar, sem o binario do Prisma CLI - precisamos dele aqui pra rodar
