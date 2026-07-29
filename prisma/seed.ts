@@ -4,7 +4,9 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { BRAND_REGISTRY } from "../src/lib/brands/registry";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+// APP_DATABASE_URL (papel restrito) - mesmo motivo do bootstrapAdmin.ts: a janela de
+// bootstrap da RLS ja libera o que este script precisa, sem exigir o superusuario.
+const adapter = new PrismaPg({ connectionString: process.env.APP_DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {

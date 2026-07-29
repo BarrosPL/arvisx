@@ -1,8 +1,10 @@
 /**
  * Cria (ou atualiza) uma conta com papel ADMIN direto no banco - "break glass" pra
  * quando ninguem ainda tem acesso ao painel /admin (ex: primeiro admin do sistema) ou
- * pra recuperar acesso se todos os admins ficarem sem senha. So roda com acesso direto
- * ao DATABASE_URL (nunca exposto via API).
+ * pra recuperar acesso se todos os admins ficarem sem senha. Usa APP_DATABASE_URL (o
+ * papel restrito, nao o superusuario de migrations) - a janela de bootstrap da RLS
+ * (migration add_user_admin_rls) libera INSERT/UPDATE em User pra qualquer papel
+ * enquanto nao existir nenhum admin ativo, entao nao precisa de privilegio de dono.
  *
  * Uso: ADMIN_EMAIL=... ADMIN_NAME=... ADMIN_PASSWORD=... npm run admin:bootstrap
  */
@@ -11,7 +13,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg({ connectionString: process.env.APP_DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
