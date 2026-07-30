@@ -118,6 +118,12 @@ export const getMetricsArgsSchema = z.object({
 
 export type GetMetricsArgs = z.infer<typeof getMetricsArgsSchema>;
 
+export const getAdSetsArgsSchema = z.object({
+  platform: platformSchema.optional(),
+});
+
+export type GetAdSetsArgs = z.infer<typeof getAdSetsArgsSchema>;
+
 export const researchStubArgsSchema = z.object({
   query: z.string().min(1),
 });
@@ -171,6 +177,12 @@ export const getMetricsChatArgsSchema = getMetricsArgsSchema.extend({
 });
 
 export type GetMetricsChatArgs = z.infer<typeof getMetricsChatArgsSchema>;
+
+export const getAdSetsChatArgsSchema = getAdSetsArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetAdSetsChatArgs = z.infer<typeof getAdSetsChatArgsSchema>;
 
 export const getMetricsHistoryChatArgsSchema = getMetricsHistoryArgsSchema.extend({
   brandId: z.string(),

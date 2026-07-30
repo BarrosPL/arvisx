@@ -3,6 +3,7 @@ import {
   proposalPayloadSchema,
   getMetricsArgsSchema,
   getMetricsHistoryArgsSchema,
+  getAdSetsArgsSchema,
   getAdBudgetArgsSchema,
   getAdLibraryArgsSchema,
   searchPublicAdLibraryArgsSchema,
@@ -10,6 +11,7 @@ import {
   getRankingChatArgsSchema,
   getMetricsChatArgsSchema,
   getMetricsHistoryChatArgsSchema,
+  getAdSetsChatArgsSchema,
   getAdBudgetChatArgsSchema,
   getAdLibraryChatArgsSchema,
   searchPublicAdLibraryChatArgsSchema,
@@ -22,6 +24,7 @@ import {
 import { getRanking } from "./getRanking";
 import { getMetrics } from "./getMetrics";
 import { getMetricsHistory } from "./getMetricsHistory";
+import { getAdSets } from "./getAdSets";
 import { getAdBudget } from "./getAdBudget";
 import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
@@ -59,7 +62,8 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_metrics",
-      description: "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a marca.",
+      description:
+        "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a marca. A lista devolvida pode vir truncada pelo limit (ver totalCount/returnedCount/truncated na resposta) - nunca conte ou some itens dessa lista pra responder 'quantos anuncios'/'quanto no total'; pra perguntas de contagem por conjunto de anuncios use get_ad_sets, que ja vem calculado.",
       parameters: {
         type: "object",
         properties: {
@@ -83,6 +87,21 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
           limit: { type: "integer", minimum: 1, maximum: 20, default: 10 },
         },
         required: ["platformAdId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_ad_sets",
+      description:
+        "Agrupa os anuncios da marca por conjunto de anuncios (AdSet no Meta, Grupo de anuncios/AdGroup no Google) e ja devolve a contagem/soma pronta (quantos anuncios em cada, verba, conversoes) - CALCULADO NO SISTEMA, nao por voce. Use SEMPRE que o usuario perguntar 'quantos anuncios tem em cada conjunto/adset/grupo' ou pedir uma visao por conjunto de anuncios - nunca tente contar ou agrupar isso sozinho a partir da lista de get_metrics, que pode vir truncada e nao e pra ser somada manualmente.",
+      parameters: {
+        type: "object",
+        properties: {
+          platform: { type: "string", enum: ["META", "GOOGLE"], description: "Filtra por plataforma. Omitir para ambas." },
+        },
         additionalProperties: false,
       },
     },
@@ -289,6 +308,8 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
         return await getMetrics(ctx.brandId, getMetricsArgsSchema.parse(parsedJson));
       case "get_metrics_history":
         return await getMetricsHistory(ctx.brandId, getMetricsHistoryArgsSchema.parse(parsedJson));
+      case "get_ad_sets":
+        return await getAdSets(ctx.brandId, getAdSetsArgsSchema.parse(parsedJson));
       case "get_ad_budget":
         return await getAdBudget(ctx.brandId, getAdBudgetArgsSchema.parse(parsedJson));
       case "get_ad_library":
@@ -319,6 +340,7 @@ const BRAND_SCOPED_TOOL_NAMES = new Set([
   "get_ranking",
   "get_metrics",
   "get_metrics_history",
+  "get_ad_sets",
   "get_ad_budget",
   "get_ad_library",
   "search_public_ad_library",
@@ -486,6 +508,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = getMetricsHistoryChatArgsSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
         return await getMetricsHistory(args.brandId, args);
+      }
+      case "get_ad_sets": {
+        const args = getAdSetsChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        return await getAdSets(args.brandId, args);
       }
       case "get_ad_budget": {
         const args = getAdBudgetChatArgsSchema.parse(parsedJson);

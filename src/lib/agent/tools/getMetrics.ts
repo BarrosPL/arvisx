@@ -9,6 +9,12 @@ import { classifyFunnelStage } from "@/lib/ranking/funnel";
  * o mesmo anuncio varias vezes.
  */
 export async function getMetrics(brandId: string, args: GetMetricsArgs) {
+  // Sem "take" aqui de proposito: "distinct" so garante 1 linha por anuncio dentro
+  // do que a query varreu, entao aplicar o limite direto na query e so cortar
+  // depois em JS e o unico jeito de saber o total real (totalCount) separado do
+  // que foi de fato devolvido (returnedCount) - contar so o array truncado como se
+  // fosse o total gerava respostas erradas pra perguntas tipo "quantos anuncios
+  // tem no total" quando a marca tem mais anuncios que o limite.
   const snapshots = await prisma.adMetricSnapshot.findMany({
     where: {
       brandId,
@@ -16,12 +22,16 @@ export async function getMetrics(brandId: string, args: GetMetricsArgs) {
     },
     orderBy: { collectedAt: "desc" },
     distinct: ["credentialId", "platformAdId"],
-    take: args.limit,
   });
 
+  const totalCount = snapshots.length;
+  const limited = snapshots.slice(0, args.limit);
+
   return {
-    count: snapshots.length,
-    metrics: snapshots.map((snapshot) => ({
+    totalCount,
+    returnedCount: limited.length,
+    truncated: totalCount > limited.length,
+    metrics: limited.map((snapshot) => ({
       platform: snapshot.platform,
       campaignId: snapshot.platformCampaignId,
       campaignName: snapshot.campaignName,
