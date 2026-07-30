@@ -7,7 +7,10 @@ import { cn } from "@/lib/utils";
 
 interface JamileChatContextValue {
   open: boolean;
-  openChat: () => void;
+  /** `prefill` envia essa mensagem automaticamente assim que a conversa abrir/estiver
+   * carregada - usado por notificacoes (ex: clicar numa proposta pendente) pra abrir
+   * o chat ja focado no assunto, em vez de navegar pra uma pagina. */
+  openChat: (options?: { prefill?: string }) => void;
   closeChat: () => void;
   toggleChat: () => void;
 }
@@ -33,6 +36,7 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
+  const [pendingPrefill, setPendingPrefill] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -49,7 +53,10 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
     };
   }, [open, loaded]);
 
-  const openChat = () => setOpen(true);
+  const openChat = (options?: { prefill?: string }) => {
+    setOpen(true);
+    if (options?.prefill) setPendingPrefill(options.prefill);
+  };
   const closeChat = () => setOpen(false);
   const toggleChat = () => setOpen((v) => !v);
 
@@ -83,7 +90,13 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
               Carregando conversa...
             </div>
           ) : (
-            <ChatPanel initialMessages={messages} onClose={closeChat} className="border-0 shadow-none" />
+            <ChatPanel
+              initialMessages={messages}
+              onClose={closeChat}
+              className="border-0 shadow-none"
+              autoSend={pendingPrefill}
+              onAutoSent={() => setPendingPrefill(null)}
+            />
           )}
         </div>
       ) : null}

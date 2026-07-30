@@ -224,12 +224,12 @@ export interface CreateGoogleCampaignResult {
  * do Executar chamar isto, igual todo o resto do sistema. */
 export async function createGoogleCampaign(
   credential: PlatformCredential,
-  params: { name: string; budgetResourceName: string }
+  params: { name: string; budgetResourceName: string; status?: "ENABLED" | "PAUSED" }
 ): Promise<CreateGoogleCampaignResult> {
   const result = await mutateOne(credential, "campaigns", {
     create: {
       name: params.name,
-      status: "ENABLED",
+      status: params.status ?? "ENABLED",
       advertisingChannelType: "SEARCH",
       campaignBudget: params.budgetResourceName,
       maximizeClicks: {},
@@ -259,10 +259,15 @@ export interface CreateGoogleAdGroupResult {
 /** Cria o Grupo de anuncios dentro da campanha ja criada. */
 export async function createGoogleAdGroup(
   credential: PlatformCredential,
-  params: { campaignResourceName: string; name: string }
+  params: { campaignResourceName: string; name: string; status?: "ENABLED" | "PAUSED" }
 ): Promise<CreateGoogleAdGroupResult> {
   const result = await mutateOne(credential, "adGroups", {
-    create: { name: params.name, campaign: params.campaignResourceName, status: "ENABLED", type: "SEARCH_STANDARD" },
+    create: {
+      name: params.name,
+      campaign: params.campaignResourceName,
+      status: params.status ?? "ENABLED",
+      type: "SEARCH_STANDARD",
+    },
   });
   return {
     ok: result.ok,
@@ -316,12 +321,18 @@ export interface CreateGoogleResponsiveSearchAdResult {
 /** Cria o anuncio (Responsive Search Ad - so texto, sem imagem, diferente do Meta). */
 export async function createGoogleResponsiveSearchAd(
   credential: PlatformCredential,
-  params: { adGroupResourceName: string; headlines: string[]; descriptions: string[]; finalUrl: string }
+  params: {
+    adGroupResourceName: string;
+    headlines: string[];
+    descriptions: string[];
+    finalUrl: string;
+    status?: "ENABLED" | "PAUSED";
+  }
 ): Promise<CreateGoogleResponsiveSearchAdResult> {
   const result = await mutateOne(credential, "adGroupAds", {
     create: {
       adGroup: params.adGroupResourceName,
-      status: "ENABLED",
+      status: params.status ?? "ENABLED",
       ad: {
         finalUrls: [params.finalUrl],
         responsiveSearchAd: {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { campaignPlanSchema, proposalPayloadSchema } from "./schema";
+import {
+  campaignPlanSchema,
+  proposalPayloadSchema,
+  decideProposalChatArgsSchema,
+  adjustProposalChatArgsSchema,
+  executeProposalChatArgsSchema,
+  getProposalChatArgsSchema,
+} from "./schema";
 
 const basePlan = {
   campaignName: "Campanha de teste",
@@ -102,5 +109,51 @@ describe("proposalPayloadSchema — NEW_CAMPAIGN", () => {
       campaignPlan: { ...basePlan, googleKeywords, googleAd },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("tools de decisão/execução (chat)", () => {
+  const brandId = "brand_1";
+  const proposalId = "prop_1";
+
+  it("get_proposal exige brandId e proposalId", () => {
+    expect(getProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(true);
+    expect(getProposalChatArgsSchema.safeParse({ brandId }).success).toBe(false);
+  });
+
+  it("decide_proposal aceita approve/test sem note", () => {
+    expect(decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "approve" }).success).toBe(true);
+    expect(decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "test" }).success).toBe(true);
+  });
+
+  it("decide_proposal recusa reject sem note", () => {
+    const result = decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "reject" });
+    expect(result.success).toBe(false);
+  });
+
+  it("decide_proposal aceita reject com note", () => {
+    const result = decideProposalChatArgsSchema.safeParse({
+      brandId,
+      proposalId,
+      decision: "reject",
+      note: "CPL muito alto pro histórico da marca",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("decide_proposal recusa decision fora do enum (ex: adjust, que agora é tool separada)", () => {
+    const result = decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "adjust" });
+    expect(result.success).toBe(false);
+  });
+
+  it("adjust_proposal exige note mesmo sem mudar nenhum campo", () => {
+    expect(adjustProposalChatArgsSchema.safeParse({ brandId, proposalId, note: "Reduzindo a verba pedida" }).success).toBe(
+      true
+    );
+    expect(adjustProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(false);
+  });
+
+  it("execute_proposal só exige brandId e proposalId", () => {
+    expect(executeProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(true);
   });
 });

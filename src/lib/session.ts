@@ -56,19 +56,31 @@ export async function requireAdmin(): Promise<SessionUser> {
 }
 
 /**
- * Garante que o usuario autenticado tem, no minimo, o papel `minRole` na marca `brandId`.
- * Esta e a checagem de brand firewall no nivel de acesso: nenhuma rota de marca deve
- * pular esta funcao.
+ * Nucleo do brand firewall no nivel de acesso: confere se `userId` tem, no minimo, o
+ * papel `minRole` na marca `brandId`, contra o BrandAccess real do banco. Extraido de
+ * `requireBrandAccess` pra ser reutilizavel fora de um request HTTP (ex: tools de chat,
+ * que so tem um userId em memoria - nunca um cookie de sessao pra ler via requireUser()).
+ * Lanca ForbiddenError se o acesso nao existir ou o papel for insuficiente.
  */
-export async function requireBrandAccess(brandId: string, minRole: BrandRole = "VIEWER") {
-  const user = await requireUser();
+export async function assertBrandRole(userId: string, brandId: string, minRole: BrandRole = "VIEWER") {
   const access = await prisma.brandAccess.findUnique({
-    where: { userId_brandId: { userId: user.id, brandId } },
+    where: { userId_brandId: { userId, brandId } },
   });
 
   if (!access || ROLE_RANK[access.role] < ROLE_RANK[minRole]) {
     throw new ForbiddenError();
   }
 
+  return access;
+}
+
+/**
+ * Garante que o usuario autenticado tem, no minimo, o papel `minRole` na marca `brandId`.
+ * Esta e a checagem de brand firewall no nivel de acesso: nenhuma rota de marca deve
+ * pular esta funcao.
+ */
+export async function requireBrandAccess(brandId: string, minRole: BrandRole = "VIEWER") {
+  const user = await requireUser();
+  const access = await assertBrandRole(user.id, brandId, minRole);
   return { user, access };
 }

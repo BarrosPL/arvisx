@@ -15,11 +15,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/change-password");
   }
 
-  const brands = await prisma.brand.findMany({
-    where: { brandAccess: { some: { userId: session.user.id } } },
-    orderBy: { priorityOrder: "asc" },
-    select: { id: true, slug: true, name: true, status: true },
-  });
+  const [brands, pendingProposalsCount] = await Promise.all([
+    prisma.brand.findMany({
+      where: { brandAccess: { some: { userId: session.user.id } } },
+      orderBy: { priorityOrder: "asc" },
+      select: { id: true, slug: true, name: true, status: true },
+    }),
+    prisma.proposal.count({
+      where: {
+        status: { in: ["PENDING", "NEEDS_MORE_DATA"] },
+        brand: { brandAccess: { some: { userId: session.user.id } } },
+      },
+    }),
+  ]);
 
   async function handleSignOut() {
     "use server";
@@ -28,8 +36,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
-      <AppSidebar brands={brands} userEmail={session.user.email!} isAdmin={session.user.role === "ADMIN"} />
+      {/* JamileProvider precisa envolver AppSidebar tambem (nao so SidebarInset) - o
+          botao "Falar com a JAMILE" da sidebar usa useJamileChat(). O Provider em si
+          nao renderiza nenhum elemento DOM (so Context.Provider), entao AppSidebar e
+          SidebarInset continuam irmaos diretos pro layout flex do Sidebar funcionar. */}
       <JamileProvider>
+        <AppSidebar
+          brands={brands}
+          userEmail={session.user.email!}
+          isAdmin={session.user.role === "ADMIN"}
+          pendingProposalsCount={pendingProposalsCount}
+        />
         <SidebarInset>
           <AppHeader brands={brands} userEmail={session.user.email!} onSignOut={handleSignOut} />
           <main className="flex flex-1 flex-col gap-6 p-6">{children}</main>

@@ -373,13 +373,13 @@ export interface CreateCampaignResult {
  * Executar chamar isto, igual todo o resto do sistema. */
 export async function createMetaCampaign(
   credential: PlatformCredential,
-  params: { name: string; dailyBudgetMinorUnits: number }
+  params: { name: string; dailyBudgetMinorUnits: number; status?: "ACTIVE" | "PAUSED" }
 ): Promise<CreateCampaignResult> {
   const accountId = toAccountId(credential.externalAccountId);
   const body = {
     name: params.name,
     objective: "OUTCOME_TRAFFIC",
-    status: "ACTIVE",
+    status: params.status ?? "ACTIVE",
     special_ad_categories: [],
     daily_budget: Math.round(params.dailyBudgetMinorUnits),
   };
@@ -415,7 +415,7 @@ export interface CreateAdSetResult {
  * otimizacao fixa em cliques no link (mesmo motivo do objetivo em createMetaCampaign). */
 export async function createMetaAdSet(
   credential: PlatformCredential,
-  params: { campaignId: string; name: string; targeting: MetaAdSetTargeting }
+  params: { campaignId: string; name: string; targeting: MetaAdSetTargeting; status?: "ACTIVE" | "PAUSED" }
 ): Promise<CreateAdSetResult> {
   const accountId = toAccountId(credential.externalAccountId);
   const targeting: Record<string, unknown> = {
@@ -432,7 +432,7 @@ export async function createMetaAdSet(
     optimization_goal: "LINK_CLICKS",
     billing_event: "IMPRESSIONS",
     targeting,
-    status: "ACTIVE",
+    status: params.status ?? "ACTIVE",
   };
   try {
     const response = await fetch(
@@ -508,14 +508,14 @@ export interface CreateAdResult {
 /** Ultimo passo: liga o AdSet + Creative num Anuncio de verdade, ja ACTIVE. */
 export async function createMetaAd(
   credential: PlatformCredential,
-  params: { adSetId: string; creativeId: string; name: string }
+  params: { adSetId: string; creativeId: string; name: string; status?: "ACTIVE" | "PAUSED" }
 ): Promise<CreateAdResult> {
   const accountId = toAccountId(credential.externalAccountId);
   const body = {
     name: params.name,
     adset_id: params.adSetId,
     creative: { creative_id: params.creativeId },
-    status: "ACTIVE",
+    status: params.status ?? "ACTIVE",
   };
   try {
     const response = await fetch(

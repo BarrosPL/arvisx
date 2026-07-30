@@ -25,8 +25,8 @@ const DEFAULT_PRIORITY = ["failed", "awaiting", "adjust", "test", "approved", "h
 
 /**
  * Agrupa propostas por status em abas, sem mudar a classificacao real de nenhuma -
- * so reorganiza a apresentacao (pedido explicito: "sem mudar a classificacao real de
- * status"). ProposalCard continua a mesma, com as mesmas acoes/regras de transicao.
+ * so reorganiza a apresentacao. ProposalCard é só leitura (histórico/auditoria) -
+ * decisão/execução acontece conversando com a JAMILE, não mais aqui.
  */
 export function ProposalsBoard({ proposals, brand }: { proposals: ProposalView[]; brand?: ProposalBrandView }) {
   const countByGroup = new Map(

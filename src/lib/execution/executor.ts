@@ -256,9 +256,13 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
         interestIds.push(matches[0].id);
       }
 
+      // NEW_CAMPAIGN sempre nasce pausada, independente de quem disparou a execucao -
+      // regra fixa (decidida com o Renan) pra ele conferir a campanha real no Gerenciador
+      // de Anuncios antes de ativar manualmente por la.
       const campaignResult = await createMetaCampaign(credential, {
         name: plan.campaignName,
         dailyBudgetMinorUnits: Math.round(plan.dailyBudget * 100),
+        status: "PAUSED",
       });
       if (!campaignResult.ok || !campaignResult.campaignId) {
         return {
@@ -277,6 +281,7 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
           ageMax: plan.metaTargeting.ageMax,
           interestIds,
         },
+        status: "PAUSED",
       });
       if (!adSetResult.ok || !adSetResult.adSetId) {
         return {
@@ -309,6 +314,7 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
         adSetId: adSetResult.adSetId,
         creativeId: creativeResult.creativeId,
         name: plan.campaignName,
+        status: "PAUSED",
       });
       if (!adResult.ok || !adResult.adId) {
         return {
@@ -358,9 +364,11 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
       };
     }
 
+    // NEW_CAMPAIGN sempre nasce pausada, mesmo motivo do bloco Meta acima.
     const campaignResult = await createGoogleCampaign(credential, {
       name: plan.campaignName,
       budgetResourceName: budgetResult.resourceName,
+      status: "PAUSED",
     });
     if (!campaignResult.ok || !campaignResult.resourceName || !campaignResult.campaignId) {
       return {
@@ -373,6 +381,7 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
     const adGroupResult = await createGoogleAdGroup(credential, {
       campaignResourceName: campaignResult.resourceName,
       name: `${plan.campaignName} — Grupo de anúncios`,
+      status: "PAUSED",
     });
     if (!adGroupResult.ok || !adGroupResult.resourceName || !adGroupResult.adGroupId) {
       return {
@@ -401,6 +410,7 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
       headlines: plan.googleAd.headlines,
       descriptions: plan.googleAd.descriptions,
       finalUrl: plan.finalUrl,
+      status: "PAUSED",
     });
     if (!adResult.ok || !adResult.adId) {
       return {

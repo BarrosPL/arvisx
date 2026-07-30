@@ -1,8 +1,10 @@
-import Link from "next/link";
+"use client";
+
 import { BrandAvatar } from "@/components/brand-avatar";
 import { StatusBadge } from "@/components/status-badge";
 import { TYPE_LABEL } from "@/components/proposal-card";
 import { proposalStatusTone } from "@/lib/proposals/status";
+import { useJamileChat } from "@/components/jamile-launcher";
 
 export interface ProposalSummaryView {
   id: string;
@@ -20,8 +22,9 @@ export interface ProposalSummaryBrandView {
 }
 
 /**
- * Resumo compacto de uma proposta pra listas cross-marca (dashboard) - detalhe
- * completo (razao, metricas, acoes de decisao) fica so na pagina de propostas da marca.
+ * Resumo compacto de uma proposta pra listas cross-marca (dashboard) - clicar abre o
+ * chat da JAMILE já perguntando sobre essa proposta especificamente (a decisão de
+ * verdade acontece por lá, não numa página de detalhe).
  */
 export function ProposalSummaryRow({
   proposal,
@@ -30,11 +33,15 @@ export function ProposalSummaryRow({
   proposal: ProposalSummaryView;
   brand: ProposalSummaryBrandView;
 }) {
+  const { openChat } = useJamileChat();
   const status = proposalStatusTone(proposal.status);
   return (
-    <Link
-      href={`/brands/${brand.slug}/proposals`}
-      className="flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 shadow-sm transition-colors hover:border-foreground/20"
+    <button
+      type="button"
+      onClick={() =>
+        openChat({ prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}).` })
+      }
+      className="flex w-full items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:border-foreground/20"
     >
       <div className="flex min-w-0 items-center gap-3">
         <BrandAvatar name={brand.name} seed={brand.id} size="xs" />
@@ -52,6 +59,6 @@ export function ProposalSummaryRow({
           {new Date(proposal.createdAt).toLocaleDateString("pt-BR")}
         </span>
       </div>
-    </Link>
+    </button>
   );
 }

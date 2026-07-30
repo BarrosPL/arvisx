@@ -9,7 +9,7 @@ import { useJamileChat } from "@/components/jamile-launcher";
 export function TalkToJamileButton() {
   const { openChat } = useJamileChat();
   return (
-    <Button size="sm" onClick={openChat}>
+    <Button size="sm" onClick={() => openChat()}>
       <MessageCircle />
       Falar com a JAMILE
     </Button>

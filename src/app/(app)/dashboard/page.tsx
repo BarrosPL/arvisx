@@ -1,13 +1,12 @@
-import Link from "next/link";
-import { Building2, Clock, Inbox, Wallet } from "lucide-react";
+import { Building2, Clock, Inbox, Sparkles, Wallet } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { BrandAvatar } from "@/components/brand-avatar";
 import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
 import { type ProposalAbTestView } from "@/components/proposal-card";
 import { ProposalSummaryRow } from "@/components/proposal-summary-row";
+import { BrandSummaryRow } from "@/components/brand-summary-row";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -35,10 +34,33 @@ interface AttentionEntry {
   tone: "danger" | "warning";
   title: string;
   description?: string;
-  href: string;
+  /** Abre o chat da JAMILE já perguntando sobre isso - não navega mais pra uma página. */
+  prefill: string;
 }
 
 const MAX_ATTENTION_ITEMS = 6;
+
+/** Frase narrada pelo topo do resumo da JAMILE - reorganizacao de apresentacao dos
+ * mesmos dados ja calculados (verdict por marca), nao uma agregacao nova. */
+function buildNarrativeSummary(
+  verdicts: Array<"BOM" | "MEDIO" | "RUIM" | null>,
+  totalSpend: number
+): string {
+  const counts = { bom: 0, medio: 0, ruim: 0, semDados: 0 };
+  for (const verdict of verdicts) {
+    if (verdict === "BOM") counts.bom++;
+    else if (verdict === "MEDIO") counts.medio++;
+    else if (verdict === "RUIM") counts.ruim++;
+    else counts.semDados++;
+  }
+  const parts: string[] = [];
+  if (counts.bom > 0) parts.push(`${counts.bom} indo bem`);
+  if (counts.medio > 0) parts.push(`${counts.medio} estável(is)`);
+  if (counts.ruim > 0) parts.push(`${counts.ruim} precisando de atenção`);
+  if (counts.semDados > 0) parts.push(`${counts.semDados} sem dado suficiente ainda`);
+  const statusSentence = parts.length > 0 ? parts.join(", ") : "nenhuma com dado suficiente ainda";
+  return `Analisei suas ${verdicts.length} marca(s): ${statusSentence}. Investimento total: ${currency(totalSpend)}.`;
+}
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -138,7 +160,7 @@ export default async function DashboardPage() {
         tone: "danger",
         title: `Falha ao executar: ${proposal.title}`,
         description: proposal.lastExecutionError ? `${brand.name} · ${proposal.lastExecutionError}` : brand.name,
-        href: `/brands/${brand.slug}/proposals`,
+        prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) falhou?`,
       });
     }
   }
@@ -150,7 +172,7 @@ export default async function DashboardPage() {
           tone: "danger",
           title: `Falha na última análise de ${result.brand.name}`,
           description: result.errorMessage ?? undefined,
-          href: `/brands/${result.brand.slug}`,
+          prefill: `Por que a última análise da marca ${result.brand.name} falhou?`,
         });
       }
     }
@@ -162,7 +184,7 @@ export default async function DashboardPage() {
         tone: "warning",
         title: `Precisa de mais dados: ${proposal.title}`,
         description: brand.name,
-        href: `/brands/${brand.slug}/proposals`,
+        prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) que está aguardando dado.`,
       });
     }
   }
@@ -175,7 +197,7 @@ export default async function DashboardPage() {
         tone: "warning",
         title: `${brand.name} precisa de atenção`,
         description: reason ? `Diagnóstico: ${reason}` : undefined,
-        href: `/brands/${brand.slug}`,
+        prefill: `Por que a marca ${brand.name} está com diagnóstico ruim? O que você recomenda?`,
       });
     }
   }
@@ -184,6 +206,10 @@ export default async function DashboardPage() {
   const hiddenAttentionCount = attentionItems.length - visibleAttentionItems.length;
 
   const greetingName = session!.user.name ?? session!.user.email?.split("@")[0] ?? "";
+  const narrativeSummary = buildNarrativeSummary(
+    brands.map((brand) => brand.rankingSnapshots[0]?.verdict ?? null),
+    totalSpend
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -238,7 +264,7 @@ export default async function DashboardPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {visibleAttentionItems.map((item) => (
-              <AttentionItem key={item.key} tone={item.tone} title={item.title} description={item.description} href={item.href} />
+              <AttentionItem key={item.key} tone={item.tone} title={item.title} description={item.description} prefill={item.prefill} />
             ))}
             {hiddenAttentionCount > 0 ? (
               <span className="text-xs text-muted-foreground">e mais {hiddenAttentionCount} item(ns)</span>
@@ -248,38 +274,30 @@ export default async function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Marcas</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <h2 className="text-sm font-medium text-muted-foreground">O que a JAMILE analisou</h2>
+        <div className="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
+          <div className="ai-gradient-bg flex size-8 shrink-0 items-center justify-center rounded-full text-white">
+            <Sparkles className="size-4" />
+          </div>
+          <p className="text-sm leading-relaxed text-pretty">{narrativeSummary}</p>
+        </div>
+        <div className="flex flex-col gap-2">
           {brands.map((brand) => {
             const ranking = brand.rankingSnapshots[0];
-            const spend = spendByBrandId.get(brand.id) ?? 0;
             const verdict = ranking ? verdictTone(ranking.verdict) : null;
             return (
-              <Link
+              <BrandSummaryRow
                 key={brand.id}
-                href={`/brands/${brand.slug}`}
-                className="group flex h-full flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:border-foreground/20 hover:border-foreground/20"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <BrandAvatar name={brand.name} seed={brand.id} size="sm" />
-                    <span className="truncate font-medium">{brand.name}</span>
-                  </div>
-                  {verdict ? (
-                    <StatusBadge tone={verdict.tone} label={verdict.label} className="shrink-0" />
-                  ) : (
-                    <StatusBadge tone="neutral" label="Sem dados" className="shrink-0" />
-                  )}
-                </div>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{spend > 0 ? `${currency(spend)} investidos` : "sem dados coletados"}</span>
-                  <span>
-                    {brand.proposals.length > 0
-                      ? `${brand.proposals.length} proposta(s) aberta(s)`
-                      : "sem proposta pendente"}
-                  </span>
-                </div>
-              </Link>
+                brand={{
+                  id: brand.id,
+                  name: brand.name,
+                  slug: brand.slug,
+                  verdictLabel: verdict?.label ?? null,
+                  verdictTone: verdict?.tone ?? "neutral",
+                  spend: spendByBrandId.get(brand.id) ?? 0,
+                  openProposalsCount: brand.proposals.length,
+                }}
+              />
             );
           })}
         </div>

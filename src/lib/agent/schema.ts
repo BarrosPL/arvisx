@@ -201,3 +201,50 @@ export const proposalPayloadChatSchema = proposalPayloadObjectSchema
   .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] });
 
 export type ProposalPayloadChat = z.infer<typeof proposalPayloadChatSchema>;
+
+/**
+ * Tools de decisao/execucao - so existem no caminho de chat (TOOL_DEFS_CHAT), nunca no
+ * TOOL_DEFS usado pelo scheduler autonomo, entao nao precisam de uma variante "base" sem
+ * brandId como as tools de leitura acima - ja nascem com brandId obrigatorio.
+ */
+export const getProposalChatArgsSchema = z.object({
+  brandId: z.string(),
+  proposalId: z.string(),
+});
+
+export type GetProposalChatArgs = z.infer<typeof getProposalChatArgsSchema>;
+
+export const decideProposalDecisionSchema = z.enum(["approve", "reject", "test"]);
+
+const decideProposalChatObjectSchema = z.object({
+  brandId: z.string(),
+  proposalId: z.string(),
+  decision: decideProposalDecisionSchema,
+  note: z.string().min(1).optional(),
+});
+
+/** "reject" exige nota (mesma regra ja aplicada hoje na rota REST /api/proposals/[id]/reject). */
+export const decideProposalChatArgsSchema = decideProposalChatObjectSchema.refine(
+  (args) => args.decision !== "reject" || (args.note && args.note.trim().length > 0),
+  { message: "decision=reject exige note", path: ["note"] }
+);
+
+export type DecideProposalChatArgs = z.infer<typeof decideProposalChatArgsSchema>;
+
+export const adjustProposalChatArgsSchema = z.object({
+  brandId: z.string(),
+  proposalId: z.string(),
+  title: z.string().min(3).optional(),
+  suggestedAction: z.string().min(3).optional(),
+  proposedBudget: z.number().positive().optional(),
+  note: z.string().min(1),
+});
+
+export type AdjustProposalChatArgs = z.infer<typeof adjustProposalChatArgsSchema>;
+
+export const executeProposalChatArgsSchema = z.object({
+  brandId: z.string(),
+  proposalId: z.string(),
+});
+
+export type ExecuteProposalChatArgs = z.infer<typeof executeProposalChatArgsSchema>;

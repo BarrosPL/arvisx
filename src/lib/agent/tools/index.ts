@@ -14,6 +14,10 @@ import {
   getAdLibraryChatArgsSchema,
   searchPublicAdLibraryChatArgsSchema,
   proposalPayloadChatSchema,
+  getProposalChatArgsSchema,
+  decideProposalChatArgsSchema,
+  adjustProposalChatArgsSchema,
+  executeProposalChatArgsSchema,
 } from "@/lib/agent/schema";
 import { getRanking } from "./getRanking";
 import { getMetrics } from "./getMetrics";
@@ -23,6 +27,9 @@ import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
 import { proposeAction } from "./proposeAction";
 import { researchStub } from "./researchStub";
+import { getProposal } from "./getProposal";
+import { decideProposalAsUser, adjustProposalAsUser } from "@/lib/proposals/decide";
+import { executeProposal } from "@/lib/execution/executor";
 
 export interface ToolContext {
   brandId: string;
@@ -31,9 +38,12 @@ export interface ToolContext {
 }
 
 /**
- * Definicao das tools expostas ao modelo. Deliberadamente NAO existe nenhuma tool de
- * escrita em Meta/Google Ads nesta fase - "propose_action" e a unica acao possivel, e
- * o gate de execucao real so entra na Fase 4 depois de aprovacao humana.
+ * Definicao das tools expostas ao modelo pra rodada AUTONOMA do scheduler
+ * (autonomous.ts) - "propose_action" e a unica acao possivel aqui, e continua sendo:
+ * a rodada automatica nunca decide nem executa nada sozinha, so cria propostas
+ * deterministicas/analisa orcamento, igual sempre foi. As tools de decisao/execucao
+ * reais (decide_proposal/adjust_proposal/execute_proposal) so existem no caminho de
+ * chat interativo abaixo (TOOL_DEFS_CHAT) - nunca aqui.
  */
 export const TOOL_DEFS: ChatCompletionTool[] = [
   {
@@ -346,11 +356,97 @@ function withBrandIdParam(tool: ChatCompletionFunctionTool): ChatCompletionFunct
   };
 }
 
-/** Mesmas tools de TOOL_DEFS, mas com "brandId" adicionado a cada uma que le/escreve
- * dado de uma marca especifica - usadas pelo chat por usuario. */
-export const TOOL_DEFS_CHAT: ChatCompletionTool[] = (TOOL_DEFS as ChatCompletionFunctionTool[]).map((tool) =>
-  BRAND_SCOPED_TOOL_NAMES.has(tool.function.name) ? withBrandIdParam(tool) : tool
-);
+const BRAND_ID_PARAM = {
+  type: "string",
+  description: "Id exato da marca (da lista de marcas do usuario no prompt de sistema) a que essa chamada se refere.",
+};
+
+/**
+ * Tools de decisao/execucao real - so existem aqui, nunca em TOOL_DEFS (rodada
+ * autonoma do scheduler). Isso e o portao: a JAMILE so ganha poder de
+ * aprovar/rejeitar/ajustar/executar dentro de uma conversa real com um usuario
+ * autenticado, nunca no processo automatico em background.
+ */
+const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "get_proposal",
+      description:
+        "Le os detalhes completos de UMA proposta especifica pelo id (razao, risco, plano de rollback, metricas, plano de campanha se houver, e se ja tem imagem anexada). Use sempre que o usuario referenciar uma proposta especifica (ex: veio de uma notificacao) antes de explicar ou decidir sobre ela. Mensagens vindas de notificacao ja trazem o id exato entre parenteses (ex: 'id: abc123') - use esse id diretamente, nunca adivinhe um id a partir so do titulo.",
+      parameters: {
+        type: "object",
+        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
+        required: ["brandId", "proposalId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "decide_proposal",
+      description:
+        "Aprova, rejeita, ou marca como 'em teste' uma proposta PENDENTE. SEMPRE reformule a acao exata numa frase clara e peca confirmacao explicita do usuario antes de chamar isto - nao ha como desfazer uma aprovacao sozinho depois. decision=reject exige note explicando o motivo. Isto NUNCA executa nada na plataforma - so muda o status da proposta. Pra mudar algo da proposta (titulo/acao/orcamento) em vez de so aprovar/rejeitar como esta, use adjust_proposal.",
+      parameters: {
+        type: "object",
+        properties: {
+          brandId: BRAND_ID_PARAM,
+          proposalId: { type: "string" },
+          decision: { type: "string", enum: ["approve", "reject", "test"] },
+          note: { type: "string", description: "Motivo/observacao - obrigatorio quando decision=reject." },
+        },
+        required: ["brandId", "proposalId", "decision"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "adjust_proposal",
+      description:
+        "Edita uma proposta PENDENTE (titulo/acao sugerida/orcamento) a pedido do usuario e a deixa pronta pra decisao de novo. SEMPRE reformule o valor novo exato e peca confirmacao antes de chamar isto.",
+      parameters: {
+        type: "object",
+        properties: {
+          brandId: BRAND_ID_PARAM,
+          proposalId: { type: "string" },
+          title: { type: "string" },
+          suggestedAction: { type: "string" },
+          proposedBudget: { type: "number", exclusiveMinimum: 0 },
+          note: { type: "string", description: "O que mudou e por que." },
+        },
+        required: ["brandId", "proposalId", "note"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "execute_proposal",
+      description:
+        "EXECUTA DE VERDADE na plataforma (Meta/Google Ads) uma proposta ja aprovada ou em teste - gasta dinheiro real / muda campanha real, imediatamente. SEMPRE reformule a acao exata que vai acontecer e peca confirmacao explicita do usuario antes de chamar isto - sem excecao. Se a proposta for NEW_CAMPAIGN, avise antes que a campanha nasce PAUSADA e precisa ser ativada manualmente na plataforma depois de conferida. So funciona se a proposta ja estiver aprovada ou em teste (chame decide_proposal antes, se ainda nao estiver).",
+      parameters: {
+        type: "object",
+        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
+        required: ["brandId", "proposalId"],
+        additionalProperties: false,
+      },
+    },
+  },
+];
+
+/** Mesmas tools de TOOL_DEFS, com "brandId" adicionado a cada uma que le/escreve dado
+ * de uma marca especifica, mais as tools de decisao/execucao (so existem aqui) -
+ * usadas pelo chat por usuario. */
+export const TOOL_DEFS_CHAT: ChatCompletionTool[] = [
+  ...(TOOL_DEFS as ChatCompletionFunctionTool[]).map((tool) =>
+    BRAND_SCOPED_TOOL_NAMES.has(tool.function.name) ? withBrandIdParam(tool) : tool
+  ),
+  ...DECISION_TOOL_DEFS,
+];
 
 export interface ChatToolContext {
   userId: string;
@@ -410,6 +506,38 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = proposalPayloadChatSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
         return await proposeAction({ brandId: args.brandId, threadId: ctx.threadId }, args);
+      }
+      case "get_proposal": {
+        const args = getProposalChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        return await getProposal(args.brandId, args.proposalId);
+      }
+      case "decide_proposal": {
+        const args = decideProposalChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        const targetStatus = { approve: "APPROVED", reject: "REJECTED", test: "TEST" }[args.decision] as
+          | "APPROVED"
+          | "REJECTED"
+          | "TEST";
+        const proposal = await decideProposalAsUser(ctx.userId, args.proposalId, targetStatus, args.note ?? null);
+        return { proposalId: proposal.id, status: proposal.status };
+      }
+      case "adjust_proposal": {
+        const args = adjustProposalChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        const proposal = await adjustProposalAsUser(
+          ctx.userId,
+          args.proposalId,
+          { title: args.title, suggestedAction: args.suggestedAction, proposedBudget: args.proposedBudget },
+          args.note
+        );
+        return { proposalId: proposal.id, status: proposal.status };
+      }
+      case "execute_proposal": {
+        const args = executeProposalChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        const executionLog = await executeProposal(args.proposalId, ctx.userId);
+        return { proposalId: args.proposalId, executionStatus: executionLog.status, errorMessage: executionLog.errorMessage };
       }
       case "research_market":
       case "scan_competitors":

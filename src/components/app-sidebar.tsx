@@ -14,6 +14,7 @@ import {
   Plug,
   Plus,
   ShieldCheck,
+  Sparkles,
   Wand2,
 } from "lucide-react";
 import { BrandAvatar } from "@/components/brand-avatar";
@@ -21,6 +22,7 @@ import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
 import { StatusBadge } from "@/components/status-badge";
 import { brandStatusTone } from "@/lib/brands/status";
 import { cn } from "@/lib/utils";
+import { useJamileChat } from "@/components/jamile-launcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -77,14 +79,19 @@ export function AppSidebar({
   brands,
   userEmail,
   isAdmin,
+  pendingProposalsCount = 0,
 }: {
   brands: BrandNavItem[];
   userEmail: string;
   isAdmin?: boolean;
+  /** Propostas aguardando decisão (todas as marcas do usuário) - mostrado como badge
+   * no botão "Falar com a JAMILE", já que a decisão em si acontece só pelo chat agora. */
+  pendingProposalsCount?: number;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const { openChat } = useJamileChat();
 
   const brandSlugMatch = pathname.match(/^\/brands\/([^/]+)/);
   const activeBrand = brandSlugMatch ? (brands.find((b) => b.slug === brandSlugMatch[1]) ?? null) : null;
@@ -165,6 +172,26 @@ export function AppSidebar({
                 </Command>
               </PopoverContent>
             </Popover>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Falar com a JAMILE"
+                  onClick={() => openChat()}
+                  className="ai-gradient-bg text-white hover:opacity-90 data-active:bg-transparent"
+                >
+                  <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-white/20">
+                    <Sparkles className="size-3" />
+                  </div>
+                  <span className="font-medium">Falar com a JAMILE</span>
+                </SidebarMenuButton>
+                {pendingProposalsCount > 0 ? <SidebarMenuBadge>{pendingProposalsCount}</SidebarMenuBadge> : null}
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 

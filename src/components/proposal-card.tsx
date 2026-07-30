@@ -1,9 +1,4 @@
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
   CircleDot,
   FlaskConical,
@@ -16,17 +11,7 @@ import {
   TriangleAlert,
   Undo2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { proposalStatusTone } from "@/lib/proposals/status";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
@@ -87,38 +72,6 @@ function formatMetricValue(key: string, value: unknown): string {
   return num.toLocaleString("pt-BR");
 }
 
-/** Resumo do que a execucao real vai fazer, mostrado no dialogo de confirmacao antes de chamar a API. */
-function describeExecution(proposal: ProposalView): string {
-  if (proposal.type === "ADJUST_BUDGET") {
-    const current = proposal.metricsJson.currentBudget;
-    const proposed = proposal.metricsJson.proposedBudget;
-    if (typeof current === "number" && typeof proposed === "number") {
-      return `Vai mudar a verba diária de ${formatCurrency(current)} para ${formatCurrency(proposed)}.`;
-    }
-    return "Vai mudar a verba diária desta campanha/anúncio.";
-  }
-  if (proposal.type === "PAUSE_AD") return "Vai pausar este anúncio na plataforma.";
-  if (proposal.type === "ACTIVATE_AD") return "Vai ativar este anúncio na plataforma.";
-  if (proposal.type === "CREATE_AB_TEST") {
-    if (proposal.platform !== "META") {
-      return "Teste A/B com execução real ainda só é suportado no Meta Ads.";
-    }
-    const current = proposal.metricsJson.currentBudget;
-    const proposed = proposal.metricsJson.proposedBudget;
-    const budgetText =
-      typeof current === "number" && typeof proposed === "number"
-        ? `com verba de ${formatCurrency(proposed)}/dia (original: ${formatCurrency(current)}/dia)`
-        : "com uma verba diferente";
-    return `Vai criar uma CÓPIA real deste anúncio ${budgetText}, reaproveitando a mesma imagem/texto, e rodar os dois em paralelo por 7 dias. Ao final, o sistema compara os resultados reais e recomenda um vencedor.`;
-  }
-  if (proposal.type === "NEW_CAMPAIGN") {
-    const plan = proposal.campaignPlan;
-    const budgetText = plan ? `${formatCurrency(plan.dailyBudget)}/dia` : "a verba definida no plano";
-    return `Vai criar uma campanha NOVA de verdade na plataforma (${budgetText}), já ativa, cobrando de verdade a partir de agora — não é revertida automaticamente.`;
-  }
-  return "Vai executar esta ação na plataforma.";
-}
-
 /** Resumo legivel do plano estruturado (payloadJson.campaignPlan) - so existe quando type=NEW_CAMPAIGN. */
 function CampaignPlanSummary({ plan, platform }: { plan: CampaignPlan; platform: string | null }) {
   return (
@@ -162,81 +115,6 @@ function CampaignPlanSummary({ plan, platform }: { plan: CampaignPlan; platform:
   );
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Unica forma de tirar uma proposta NEW_CAMPAIGN (Meta) de NEEDS_MORE_DATA - a JAMILE
- * nunca gera/promete a imagem, so um humano anexa aqui (ver /api/proposals/[id]/creative-asset).
- */
-function CreativeAssetUpload({ proposalId, onDone }: { proposalId: string; onDone: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const next = event.target.files?.[0] ?? null;
-    setFile(next);
-    setPreviewUrl(next ? URL.createObjectURL(next) : null);
-  }
-
-  async function handleSubmit() {
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      const dataBase64 = await fileToBase64(file);
-      const response = await fetch(`/api/proposals/${proposalId}/creative-asset`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataBase64, mimeType: file.type }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(body.error ?? "Falha ao anexar imagem.");
-        return;
-      }
-      toast.success("Imagem anexada — proposta liberada para aprovação.");
-      onDone();
-    } finally {
-      setIsUploading(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-      <p>Falta anexar a imagem do anúncio — a JAMILE nunca gera uma, isso é feito por um humano.</p>
-      <input
-        type="file"
-        accept="image/jpeg,image/png"
-        onChange={handleFileChange}
-        className="text-xs file:mr-2 file:rounded-full file:border-0 file:bg-foreground file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-background"
-      />
-      {previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={previewUrl} alt="Pré-visualização da imagem anexada" className="h-24 w-auto rounded-lg border object-cover" />
-      ) : null}
-      <Button
-        size="sm"
-        variant="default"
-        className="w-fit rounded-full"
-        disabled={!file || isUploading}
-        onClick={handleSubmit}
-      >
-        Anexar e enviar para aprovação
-      </Button>
-    </div>
-  );
-}
-
 export interface ProposalAbTestView {
   status: string;
   controlValue: number;
@@ -274,269 +152,22 @@ export interface ProposalView {
   campaignPlan?: CampaignPlan | null;
 }
 
-type DecisionAction = "approve" | "reject" | "test" | "adjust" | "reopen";
-
-const ACTION_LABEL: Record<DecisionAction, string> = {
-  approve: "Aprovar",
-  reject: "Rejeitar",
-  test: "Testar",
-  adjust: "Ajustar",
-  reopen: "Reabrir",
-};
-
-const ACTION_PAST_LABEL: Record<DecisionAction, string> = {
-  approve: "aprovada",
-  reject: "rejeitada",
-  test: "marcada para teste",
-  adjust: "marcada para ajuste",
-  reopen: "reaberta",
-};
-
-function NoteDialog({
-  action,
-  onConfirm,
-  disabled,
-}: {
-  action: DecisionAction;
-  onConfirm: (note: string) => Promise<void>;
-  disabled: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={action === "reject" ? "destructive" : "outline"} size="sm" />} disabled={disabled}>
-        {ACTION_LABEL[action]}
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{ACTION_LABEL[action]} proposta</DialogTitle>
-        </DialogHeader>
-        <Textarea
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="Motivo (obrigatório)"
-        />
-        <DialogFooter>
-          <Button
-            variant={action === "reject" ? "destructive" : "default"}
-            disabled={!note.trim() || isSubmitting}
-            onClick={async () => {
-              setIsSubmitting(true);
-              try {
-                await onConfirm(note.trim());
-                setOpen(false);
-                setNote("");
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            Confirmar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ExecuteDialog({
-  proposal,
-  onConfirm,
-  disabled,
-}: {
-  proposal: ProposalView;
-  onConfirm: () => Promise<void>;
-  disabled: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="default" size="sm" className="rounded-full" />} disabled={disabled}>
-        Executar
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Confirmar execução</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm">{describeExecution(proposal)}</p>
-        <p className="text-xs text-muted-foreground">
-          Isso muda a campanha de verdade na plataforma - não é revertido automaticamente.
-        </p>
-        <DialogFooter>
-          <Button
-            disabled={isSubmitting}
-            onClick={async () => {
-              setIsSubmitting(true);
-              try {
-                await onConfirm();
-                setOpen(false);
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            Sim, executar agora
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function EditAdjustDialog({
-  proposal,
-  onConfirm,
-  disabled,
-}: {
-  proposal: ProposalView;
-  onConfirm: (fields: { title: string; suggestedAction: string; proposedBudget?: number }) => Promise<void>;
-  disabled: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [title, setTitle] = useState(proposal.title);
-  const [suggestedAction, setSuggestedAction] = useState(proposal.suggestedAction);
-  const hasBudget = typeof proposal.metricsJson.proposedBudget === "number";
-  const [proposedBudget, setProposedBudget] = useState(
-    hasBudget ? String(proposal.metricsJson.proposedBudget) : ""
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm" className="rounded-full" />} disabled={disabled}>
-        Editar e reabrir
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Editar proposta</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Título</label>
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Ação sugerida</label>
-          <Textarea value={suggestedAction} onChange={(event) => setSuggestedAction(event.target.value)} />
-        </div>
-        {hasBudget ? (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">Verba proposta (€/dia)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={proposedBudget}
-              onChange={(event) => setProposedBudget(event.target.value)}
-              className="rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring"
-            />
-          </div>
-        ) : null}
-        <DialogFooter>
-          <Button
-            disabled={isSubmitting || !title.trim() || !suggestedAction.trim()}
-            onClick={async () => {
-              setIsSubmitting(true);
-              try {
-                const budgetValue = hasBudget ? Number(proposedBudget) : undefined;
-                await onConfirm({
-                  title: title.trim(),
-                  suggestedAction: suggestedAction.trim(),
-                  proposedBudget: budgetValue !== undefined && Number.isFinite(budgetValue) ? budgetValue : undefined,
-                });
-                setOpen(false);
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            Salvar e reabrir para decisão
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export interface ProposalBrandView {
   id: string;
   name: string;
   slug: string;
 }
 
+/**
+ * Card SÓ LEITURA - histórico/auditoria de uma proposta. Aprovar/rejeitar/ajustar/
+ * executar não acontece mais por aqui: toda a árvore de decisão passa a acontecer
+ * conversando com a JAMILE (decide_proposal/adjust_proposal/execute_proposal, ver
+ * lib/agent/tools/index.ts) - decisão do Renan, ver plano "JAMILE conduz tudo pelo
+ * chat". Anexar a imagem de uma NEW_CAMPAIGN também migrou pro chat
+ * (ChatCreativeAssetUpload em chat-panel.tsx).
+ */
 export function ProposalCard({ proposal, brand }: { proposal: ProposalView; brand?: ProposalBrandView }) {
-  const router = useRouter();
-  const [isBusy, setIsBusy] = useState(false);
-
-  async function decide(action: DecisionAction, note: string | null) {
-    setIsBusy(true);
-    try {
-      const response = await fetch(`/api/proposals/${proposal.id}/${action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note ?? undefined }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(body.error ?? "Falha ao atualizar proposta.");
-        return;
-      }
-      toast.success(`Proposta ${ACTION_PAST_LABEL[action]}.`);
-      router.refresh();
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function editAndReopen(fields: { title: string; suggestedAction: string; proposedBudget?: number }) {
-    setIsBusy(true);
-    try {
-      const response = await fetch(`/api/proposals/${proposal.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(body.error ?? "Falha ao editar proposta.");
-        return;
-      }
-      toast.success("Proposta editada e reaberta.");
-      router.refresh();
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function execute() {
-    setIsBusy(true);
-    try {
-      const response = await fetch(`/api/proposals/${proposal.id}/execute`, { method: "POST" });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(body.error ?? "Falha ao executar proposta.");
-        return;
-      }
-      toast.success("Executado com sucesso.");
-      router.refresh();
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  const isPending = proposal.status === "PENDING";
   const isNeedsData = proposal.status === "NEEDS_MORE_DATA";
-  const isApproved = proposal.status === "APPROVED";
-  const isTest = proposal.status === "TEST";
-  const isAdjust = proposal.status === "ADJUST";
   const isExecutionFailed = proposal.status === "EXECUTION_FAILED";
 
   return (
@@ -648,11 +279,11 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
           <CampaignPlanSummary plan={proposal.campaignPlan} platform={proposal.platform} />
         ) : null}
 
-        {isNeedsData && proposal.type === "NEW_CAMPAIGN" ? (
-          <CreativeAssetUpload proposalId={proposal.id} onDone={() => router.refresh()} />
-        ) : isNeedsData ? (
+        {isNeedsData ? (
           <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-            Aguardando um campaign_id/ad_id e métrica financeira reais antes de poder ir para aprovação.
+            {proposal.type === "NEW_CAMPAIGN"
+              ? "Falta anexar a imagem do anúncio — peça pra JAMILE no chat, ela mostra onde anexar."
+              : "Aguardando um campaign_id/ad_id e métrica financeira reais antes de poder ir para aprovação."}
           </p>
         ) : null}
         {isExecutionFailed && proposal.lastExecutionError ? (
@@ -668,39 +299,10 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
           </p>
         ) : null}
 
-        <div className="flex items-center justify-between gap-2 border-t pt-3">
+        <div className="border-t pt-3">
           <span className="text-xs text-muted-foreground">
             Criada em {new Date(proposal.createdAt).toLocaleString("pt-BR")}
           </span>
-          {isPending ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                className="rounded-full"
-                disabled={isBusy}
-                onClick={() => decide("approve", null)}
-              >
-                Aprovar
-              </Button>
-              <NoteDialog action="test" onConfirm={(note) => decide("test", note)} disabled={isBusy} />
-              <NoteDialog action="adjust" onConfirm={(note) => decide("adjust", note)} disabled={isBusy} />
-              <NoteDialog action="reject" onConfirm={(note) => decide("reject", note)} disabled={isBusy} />
-            </div>
-          ) : null}
-          {isApproved || isTest ? <ExecuteDialog proposal={proposal} onConfirm={execute} disabled={isBusy} /> : null}
-          {isExecutionFailed ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              disabled={isBusy}
-              onClick={() => decide("approve", null)}
-            >
-              Tentar novamente
-            </Button>
-          ) : null}
-          {isAdjust ? <EditAdjustDialog proposal={proposal} onConfirm={editAndReopen} disabled={isBusy} /> : null}
         </div>
       </CardContent>
     </Card>

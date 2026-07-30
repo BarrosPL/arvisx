@@ -31,6 +31,10 @@ const TOOL_LABEL: Record<string, string> = {
   get_ad_library: "Consultou a biblioteca de anúncios da conta",
   search_public_ad_library: "Pesquisou a biblioteca pública de anúncios",
   propose_action: "Criou uma proposta",
+  get_proposal: "Consultou os detalhes de uma proposta",
+  decide_proposal: "Decidiu sobre uma proposta",
+  adjust_proposal: "Ajustou uma proposta",
+  execute_proposal: "Executou uma proposta na plataforma",
   research_market: "Pesquisa de mercado",
   scan_competitors: "Pesquisa de concorrência",
 };
@@ -59,8 +63,44 @@ function toolSummary(message: ChatMessageView): string {
     const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
     return `${label} · status: ${parsed.status}${missing.length ? ` (faltando: ${missing.join(", ")})` : ""}`;
   }
+  if (message.toolName === "get_proposal" && typeof parsed.status === "string") {
+    return `${label} · status: ${parsed.status}`;
+  }
+  if ((message.toolName === "decide_proposal" || message.toolName === "adjust_proposal") && typeof parsed.status === "string") {
+    return `${label} · novo status: ${parsed.status}`;
+  }
+  if (message.toolName === "execute_proposal") {
+    return parsed.executionStatus === "SUCCESS"
+      ? `${label} · executado com sucesso`
+      : `${label} · falhou (${typeof parsed.errorMessage === "string" ? parsed.errorMessage : "erro desconhecido"})`;
+  }
   if (typeof parsed.message === "string") return `${label} · ${parsed.message}`;
   return label;
+}
+
+/** Proposta NEW_CAMPAIGN (Meta) que acabou de nascer/ser consultada e ainda falta a
+ * imagem do anuncio - unico caso onde o chat mostra um uploader inline (ver
+ * ChatCreativeAssetUpload abaixo). Cobre tanto propose_action (campo "missing" ja diz
+ * isso) quanto get_proposal (campos "type"/"status"/"hasCreativeAsset" explicitos). */
+function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: string } | null {
+  for (const tool of tools) {
+    const parsed = parseToolContent(tool);
+    if (!parsed) continue;
+    if (tool.toolName === "propose_action" && typeof parsed.proposalId === "string") {
+      const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
+      if (missing.includes("imagem do anúncio")) return { proposalId: parsed.proposalId };
+    }
+    if (
+      tool.toolName === "get_proposal" &&
+      typeof parsed.id === "string" &&
+      parsed.type === "NEW_CAMPAIGN" &&
+      parsed.status === "NEEDS_MORE_DATA" &&
+      parsed.hasCreativeAsset === false
+    ) {
+      return { proposalId: parsed.id };
+    }
+  }
+  return null;
 }
 
 interface CreatedProposalInfo {
@@ -138,6 +178,75 @@ function ToolStepsGroup({ tools }: { tools: ChatMessageView[] }) {
   );
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Unico jeito de anexar a imagem de uma proposta NEW_CAMPAIGN (Meta) agora que a
+ * decisao nao passa mais pela tela da proposta - a JAMILE nunca gera/promete a
+ * imagem, um humano anexa aqui dentro da propria conversa. Reaproveita a mesma rota
+ * POST /api/proposals/[id]/creative-asset ja usada antes em proposal-card.tsx.
+ */
+function ChatCreativeAssetUpload({ proposalId }: { proposalId: string }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleUpload() {
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const dataBase64 = await fileToBase64(file);
+      const response = await fetch(`/api/proposals/${proposalId}/creative-asset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataBase64, mimeType: file.type }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(body.error ?? "Falha ao anexar imagem.");
+        return;
+      }
+      toast.success("Imagem anexada — proposta liberada para aprovação.");
+      setDone(true);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  if (done) {
+    return <p className="w-fit rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-xs text-success">Imagem anexada</p>;
+  }
+
+  return (
+    <div className="flex w-fit flex-wrap items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs">
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        className="max-w-40 text-xs file:mr-1.5 file:rounded-full file:border-0 file:bg-foreground file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-background"
+      />
+      <button
+        type="button"
+        onClick={handleUpload}
+        disabled={!file || isUploading}
+        className="rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+      >
+        Anexar
+      </button>
+    </div>
+  );
+}
+
 function JamileAvatar({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <div
@@ -155,10 +264,17 @@ export function ChatPanel({
   initialMessages,
   onClose,
   className,
+  autoSend,
+  onAutoSent,
 }: {
   initialMessages: ChatMessageView[];
   onClose?: () => void;
   className?: string;
+  /** Mensagem pra enviar automaticamente quando definida/mudar - usado quando o chat
+   * abre focado num assunto (ex: clicar numa notificacao de proposta). Ver
+   * jamile-launcher.tsx openChat({ prefill }). */
+  autoSend?: string | null;
+  onAutoSent?: () => void;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState("");
@@ -168,6 +284,13 @@ export function ChatPanel({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
+
+  useEffect(() => {
+    if (!autoSend) return;
+    sendMessage(autoSend);
+    onAutoSent?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend]);
 
   async function sendMessage(content: string) {
     if (!content || isSending) return;
@@ -263,6 +386,7 @@ export function ChatPanel({
             );
           }
           const proposalInfo = createdProposalInfo(item.tools);
+          const pendingAsset = pendingCreativeAssetProposal(item.tools);
           return (
             <div key={item.message.id} className="flex flex-col gap-1.5 self-start">
               {item.tools.length > 0 ? <ToolStepsGroup tools={item.tools} /> : null}
@@ -275,6 +399,7 @@ export function ChatPanel({
               <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
                 {item.message.content}
               </div>
+              {pendingAsset ? <ChatCreativeAssetUpload proposalId={pendingAsset.proposalId} /> : null}
               {proposalInfo?.brandSlug ? (
                 <Link
                   href={`/brands/${proposalInfo.brandSlug}/proposals`}
@@ -316,7 +441,7 @@ export function ChatPanel({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          A JAMILE gera recomendações. Nenhuma alteração é executada sem sua aprovação.
+          Aprovar, ajustar e executar também acontece por aqui — a JAMILE sempre confirma a ação exata antes de agir.
         </p>
       </div>
     </Card>
