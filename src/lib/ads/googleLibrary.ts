@@ -5,6 +5,7 @@ import { CollectionState } from "@/generated/prisma/client";
 
 interface GoogleAdLibraryRow {
   campaign?: { id?: string; name?: string };
+  adGroup?: { id?: string; name?: string };
   adGroupAd?: {
     status?: string;
     ad?: {
@@ -25,6 +26,8 @@ const GAQL_QUERY = `
   SELECT
     campaign.id,
     campaign.name,
+    ad_group.id,
+    ad_group.name,
     ad_group_ad.status,
     ad_group_ad.ad.id,
     ad_group_ad.ad.name,
@@ -44,6 +47,8 @@ function normalizeRow(row: GoogleAdLibraryRow): NormalizedAdCreativeRow | null {
     platformCampaignId: row.campaign?.id ?? null,
     campaignName: row.campaign?.name ?? null,
     adName: row.adGroupAd?.ad?.name ?? null,
+    platformAdSetId: row.adGroup?.id ?? null,
+    adSetName: row.adGroup?.name ?? null,
     status: row.adGroupAd?.status ?? null,
     // Tipos como Performance Max nao tem esses campos - fica null, nunca inventado.
     headline: rsa?.headlines?.[0]?.text ?? null,

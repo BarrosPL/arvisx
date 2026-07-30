@@ -9,6 +9,7 @@ interface MetaAdLibraryRow {
   name?: string;
   status?: string;
   campaign?: { id?: string; name?: string };
+  adset?: { id?: string; name?: string };
   creative?: {
     thumbnail_url?: string;
     body?: string;
@@ -30,6 +31,8 @@ function normalizeRow(row: MetaAdLibraryRow): NormalizedAdCreativeRow | null {
     platformCampaignId: row.campaign?.id ?? null,
     campaignName: row.campaign?.name ?? null,
     adName: row.name ?? null,
+    platformAdSetId: row.adset?.id ?? null,
+    adSetName: row.adset?.name ?? null,
     status: row.status ?? null,
     headline: row.creative?.title ?? null,
     bodyText: row.creative?.body ?? null,
@@ -49,9 +52,14 @@ export async function fetchMetaAdLibrary(credential: PlatformCredential): Promis
     ? credential.externalAccountId
     : `act_${credential.externalAccountId}`;
 
-  const fields = ["id", "name", "status", "campaign{id,name}", "creative{thumbnail_url,body,title,call_to_action_type}"].join(
-    ","
-  );
+  const fields = [
+    "id",
+    "name",
+    "status",
+    "campaign{id,name}",
+    "adset{id,name}",
+    "creative{thumbnail_url,body,title,call_to_action_type}",
+  ].join(",");
 
   let url =
     `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/ads` +

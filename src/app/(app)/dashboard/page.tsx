@@ -4,14 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
-import { BrandSummaryRow } from "@/components/brand-summary-row";
+import { LiveCampaignsView } from "@/components/live-campaigns-view";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
-import { verdictTone } from "@/lib/ranking/verdictLabels";
 import { formatCurrency, formatDateTime, formatTime } from "@/lib/format";
 import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
+import { getLiveAccountStructure } from "@/lib/ads/liveSnapshot";
 
 /** Frase narrada pelo topo do resumo da JAMILE - reorganizacao de apresentacao dos
  * mesmos dados ja calculados (verdict por marca), nao uma agregacao nova. */
@@ -70,6 +70,7 @@ export default async function DashboardPage() {
           },
           select: { id: true },
         },
+        credentials: { select: { id: true } },
       },
     }),
     prisma.schedulerRun.findFirst({
@@ -94,6 +95,20 @@ export default async function DashboardPage() {
   }
 
   const openProposalsCount = brands.reduce((sum, brand) => sum + brand.proposals.length, 0);
+
+  // So busca ao vivo (Meta/Google, fora do Postgres) pra marca que realmente tem
+  // conta conectada - getLiveAccountStructure([]) resolve na hora pras outras, sem
+  // chamada nenhuma. Cacheado por credencial (60s) dentro de liveSnapshot.ts.
+  const liveBrands = await Promise.all(
+    brands
+      .filter((brand) => brand.credentials.length > 0)
+      .map(async (brand) => ({
+        id: brand.id,
+        name: brand.name,
+        slug: brand.slug,
+        snapshots: await getLiveAccountStructure(brand.id),
+      }))
+  );
 
   const runSummary = latestRun
     ? (() => {
@@ -164,26 +179,11 @@ export default async function DashboardPage() {
           </div>
           <p className="text-sm leading-relaxed text-pretty">{narrativeSummary}</p>
         </div>
-        <div className="flex flex-col gap-2">
-          {brands.map((brand) => {
-            const ranking = brand.rankingSnapshots[0];
-            const verdict = ranking ? verdictTone(ranking.verdict) : null;
-            return (
-              <BrandSummaryRow
-                key={brand.id}
-                brand={{
-                  id: brand.id,
-                  name: brand.name,
-                  slug: brand.slug,
-                  verdictLabel: verdict?.label ?? null,
-                  verdictTone: verdict?.tone ?? "neutral",
-                  spend: spendByBrandId.get(brand.id) ?? 0,
-                  openProposalsCount: brand.proposals.length,
-                }}
-              />
-            );
-          })}
-        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Rodando agora (ao vivo)</h2>
+        <LiveCampaignsView brands={liveBrands} />
       </div>
     </div>
   );

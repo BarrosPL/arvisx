@@ -47,6 +47,11 @@ export interface NormalizedAdCreativeRow {
   platformCampaignId: string | null;
   campaignName: string | null;
   adName: string | null;
+  /** Meta: id do AdSet. Google: id do AdGroup. Gap real encontrado: nenhuma das duas
+   * buscas de biblioteca trazia isso antes - so campanha + anuncio, faltando o nivel
+   * de conjunto de anuncios pra montar uma visao hierarquica completa. */
+  platformAdSetId: string | null;
+  adSetName: string | null;
   status: string | null;
   headline: string | null;
   bodyText: string | null;
