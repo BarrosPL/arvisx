@@ -62,8 +62,16 @@ const PROPOSAL_PAYLOAD_PROPERTIES = {
   risk: { type: "string" },
   rollbackPlan: { type: "string" },
   platform: { type: ["string", "null"], enum: ["META", "GOOGLE", null] },
-  platformCampaignId: { type: ["string", "null"], description: "ID real da campanha na plataforma, se a acao for sobre algo existente." },
-  platformAdId: { type: ["string", "null"], description: "ID real do anuncio na plataforma, se a acao for sobre algo existente." },
+  platformCampaignId: {
+    type: ["string", "null"],
+    description:
+      "ID real da campanha na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar A CAMPANHA INTEIRA: preencha so este campo (deixe platformAdId de fora) - o sistema pausa a campanha inteira quando so este vem preenchido.",
+  },
+  platformAdId: {
+    type: ["string", "null"],
+    description:
+      "ID real do anuncio na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar um ANUNCIO ESPECIFICO (nao a campanha inteira): preencha este campo com o id real desse anuncio - nunca escolha/invente um anuncio qualquer de dentro de uma campanha so pra preencher isto quando o pedido era sobre a campanha inteira.",
+  },
   platformAdSetId: {
     type: ["string", "null"],
     description: "Obrigatorio quando type=ADJUST_BUDGET no Meta (id do AdSet) - e onde a execucao real vai mudar a verba.",

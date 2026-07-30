@@ -77,6 +77,42 @@ export async function setGoogleAdStatus(
   }
 }
 
+/**
+ * Pausa ou ativa a CAMPANHA inteira (nao um anuncio especifico dentro dela). Diferente
+ * de setGoogleAdStatus, so precisa do campaignId - usada quando o usuario pede pra
+ * pausar/ativar "a campanha" em vez de um anuncio especifico; lib/execution/executor.ts
+ * decide qual das duas chamar com base em qual id a proposta tem preenchido.
+ */
+export async function setGoogleCampaignStatus(
+  credential: PlatformCredential,
+  campaignId: string,
+  status: "ENABLED" | "PAUSED"
+): Promise<WriteResult> {
+  try {
+    const customerId = normalizeCustomerId(credential.externalAccountId);
+    const headers = await authHeaders(credential);
+    const resourceName = `customers/${customerId}/campaigns/${campaignId}`;
+
+    const response = await fetch(
+      `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/campaigns:mutate`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          operations: [{ update: { resourceName, status }, updateMask: "status" }],
+        }),
+      }
+    );
+    const body = (await response.json()) as GoogleAdsErrorBody;
+    if (!response.ok || body.error) {
+      throw new Error(`Google Ads API error: ${body.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, raw: body };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
 /** Le o orcamento diario atual da campanha (em micros - 1_000_000 micros = 1 unidade monetaria). */
 export async function getGoogleCampaignBudget(
   credential: PlatformCredential,

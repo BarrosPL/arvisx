@@ -5,6 +5,7 @@ import { toPlatformCredential } from "@/lib/ads/credentials";
 import type { CampaignPlan } from "@/lib/agent/schema";
 import {
   setMetaAdStatus,
+  setMetaCampaignStatus,
   setMetaBudget,
   getMetaBudget,
   duplicateMetaAdWithBudget,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/ads/metaWrite";
 import {
   setGoogleAdStatus,
+  setGoogleCampaignStatus,
   setGoogleCampaignBudget,
   getGoogleCampaignBudget,
   createGoogleCampaignBudget,
@@ -75,10 +77,37 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
   const credential = await findCredential(proposal.brandId, proposal.platform);
 
   if (proposal.type === "PAUSE_AD" || proposal.type === "ACTIVATE_AD") {
-    if (!proposal.platformAdId) {
-      throw new Error("Proposta sem platformAdId");
-    }
     const wantActive = proposal.type === "ACTIVATE_AD";
+
+    // Nivel de anuncio (platformAdId preenchido) e o caso mais comum. Sem
+    // platformAdId, mas com platformCampaignId, e um pedido pra pausar/ativar a
+    // CAMPANHA inteira (nao um anuncio especifico dentro dela) - a proposta sempre
+    // tem um dos dois porque dataEnforcement.ts exige campaignId OU adId real.
+    if (!proposal.platformAdId) {
+      if (!proposal.platformCampaignId) {
+        throw new Error("Proposta sem platformAdId nem platformCampaignId");
+      }
+
+      if (proposal.platform === "META") {
+        const result = await setMetaCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ACTIVE" : "PAUSED");
+        return {
+          ok: result.ok,
+          requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ACTIVE" : "PAUSED" },
+          responseJson: result.raw,
+          errorMessage: result.errorMessage,
+          rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", campaignId: proposal.platformCampaignId },
+        };
+      }
+
+      const result = await setGoogleCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ENABLED" : "PAUSED");
+      return {
+        ok: result.ok,
+        requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ENABLED" : "PAUSED" },
+        responseJson: result.raw,
+        errorMessage: result.errorMessage,
+        rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", campaignId: proposal.platformCampaignId },
+      };
+    }
 
     if (proposal.platform === "META") {
       const result = await setMetaAdStatus(credential, proposal.platformAdId, wantActive ? "ACTIVE" : "PAUSED");
