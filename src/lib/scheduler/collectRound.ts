@@ -3,6 +3,13 @@ import { collectAllCampaignsForBrand } from "@/lib/ads/collectCampaigns";
 
 let isRunning = false;
 
+/** Pausa entre marcas - ver comentario no laco de runCollectRound. */
+const BRAND_DELAY_MS = 750;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface CollectRoundResult {
   brands: number;
   credentials: number;
@@ -33,7 +40,12 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
 
   try {
     const brands = await prisma.brand.findMany({
-      where: { credentials: { some: {} } },
+      where: {
+        // So marca com credencial que ainda autentica. Credencial em AUTH_ERROR ia
+        // falhar de novo a cada 15min, gastando chamada e tempo a toa - volta sozinha
+        // pro ciclo quando a rodada de analise (6h) ou uma reconexao consertar o status.
+        credentials: { some: { status: { not: "AUTH_ERROR" } } },
+      },
       orderBy: { priorityOrder: "asc" },
       select: { id: true },
     });
@@ -45,6 +57,10 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
       const summaries = await collectAllCampaignsForBrand(brand.id);
       credentials += summaries.length;
       errors += summaries.filter((s) => s.state === "AUTH_ERROR" || s.state === "API_ERROR").length;
+      // Respiro entre marcas: o processo do servidor web e o mesmo que roda isto, e
+      // dezenas de contas em sequencia sem pausa deixavam a navegacao travada. Tambem
+      // espaca as chamadas, o que e o que evita a plataforma recusar por excesso.
+      await sleep(BRAND_DELAY_MS);
     }
 
     return { brands: brands.length, credentials, errors, skipped: false };

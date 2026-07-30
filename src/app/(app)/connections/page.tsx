@@ -23,18 +23,22 @@ export default async function ConnectionsPage({ searchParams }: PageProps) {
   // Contas descobertas ja viram marca propria automaticamente - roda aqui de novo
   // (alem do callback OAuth) pra cobrir contas que apareceram depois do login inicial
   // (ex: acesso a mais uma conta de anuncio na mesma Business Manager). Idempotente -
-  // pula contas que ja tem credencial. Best-effort: nao trava a pagina se falhar.
+  // pula contas que ja tem credencial.
+  //
+  // FIRE-AND-FORGET de proposito: isto faz chamada AO VIVO ao Meta/Google pra descobrir
+  // contas, e antes era esperado (await) antes de renderizar - com dezenas de contas a
+  // pagina simplesmente nao abria. Agora dispara em segundo plano e a tela renderiza na
+  // hora; contas novas aparecem no proximo carregamento. Mesmo padrao ja usado no
+  // runBestEffortSync dentro do proprio autoProvision.
   const existingConnections = await prisma.providerConnection.findMany({
     where: { userId: session.user.id },
     select: { id: true },
   });
-  await Promise.all(
-    existingConnections.map((connection) =>
-      autoProvisionBrandsForConnection(connection.id).catch((error) => {
-        console.error("[auto-provision] falhou no carregamento de /connections:", error);
-      })
-    )
-  );
+  for (const connection of existingConnections) {
+    void autoProvisionBrandsForConnection(connection.id).catch((error) => {
+      console.error("[auto-provision] falhou em segundo plano a partir de /connections:", error);
+    });
+  }
 
   const [connections, brandAccess] = await Promise.all([
     prisma.providerConnection.findMany({

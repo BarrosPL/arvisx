@@ -12,8 +12,11 @@
  */
 const DEFAULT_ANALYSIS_INTERVAL_MINUTES = 360;
 const DEFAULT_COLLECT_INTERVAL_MINUTES = 15;
-const FIRST_COLLECT_DELAY_MS = 15_000;
-const FIRST_ANALYSIS_DELAY_MS = 60_000;
+/** Nao dispara logo no boot de proposito: subir uma versao nova e justamente quando o
+ * usuario esta abrindo o sistema, e a coleta de dezenas de contas competindo com o
+ * primeiro carregamento deixava tudo lento. 2min da tempo da navegacao inicial. */
+const FIRST_COLLECT_DELAY_MS = 120_000;
+const FIRST_ANALYSIS_DELAY_MS = 300_000;
 
 const globalForScheduler = globalThis as unknown as {
   proactiveSchedulerStarted?: boolean;

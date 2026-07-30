@@ -5,6 +5,7 @@ import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
 import { ActiveCampaignsTable, type ActiveCampaignRow } from "@/components/active-campaigns-table";
+import { CollectionStatusNotice, type CollectionFailure } from "@/components/collection-status-notice";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
 import { RefreshDataButton } from "@/components/refresh-data-button";
 import { PageHeader } from "@/components/page-header";
@@ -69,13 +70,12 @@ export default async function DashboardPage() {
       include: { brandResults: true },
     }),
     // Mesma dedupe ja usada em todo lugar que le snapshot (orderBy collectedAt desc +
-    // distinct): so a coleta MAIS RECENTE de cada campanha, ja que a tabela acumula
+    // distinct): so a coleta MAIS RECENTE de cada credencial, ja que a tabela acumula
     // historico. Alimentada pelo ciclo de coleta de 15min - nunca consulta a API aqui.
+    // Sem filtro de collectionState: as linhas de erro precisam vir junto pra dar pra
+    // dizer POR QUE a tela esta vazia (antes um erro de coleta virava zero silencioso).
     prisma.campaignMetricSnapshot.findMany({
-      where: {
-        collectionState: "OK",
-        brand: { brandAccess: { some: { userId } } },
-      },
+      where: { brand: { brandAccess: { some: { userId } } } },
       orderBy: { collectedAt: "desc" },
       distinct: ["credentialId", "platformCampaignId"],
     }),
@@ -83,7 +83,15 @@ export default async function DashboardPage() {
 
   const brandById = new Map(brands.map((brand) => [brand.id, brand]));
 
-  const activeRows: ActiveCampaignRow[] = campaignSnapshots
+  const okSnapshots = campaignSnapshots.filter((snapshot) => snapshot.collectionState === "OK");
+  // Contas cuja ULTIMA coleta falhou - sem isso, um erro de credencial/API viraria
+  // simplesmente "0 campanhas ativas" na tela, sem nenhuma pista do motivo.
+  const failedSnapshots = campaignSnapshots.filter(
+    (snapshot) => snapshot.collectionState === "AUTH_ERROR" || snapshot.collectionState === "API_ERROR"
+  );
+  const neverCollected = campaignSnapshots.length === 0;
+
+  const activeRows: ActiveCampaignRow[] = okSnapshots
     .filter((snapshot) => snapshot.platformCampaignId && ACTIVE_STATUSES.has((snapshot.campaignStatus ?? "").toUpperCase()))
     .map((snapshot) => {
       const brand = brandById.get(snapshot.brandId);
@@ -115,6 +123,12 @@ export default async function DashboardPage() {
     (latest, snapshot) => (latest === null || snapshot.collectedAt > latest ? snapshot.collectedAt : latest),
     null
   );
+
+  const collectionFailures: CollectionFailure[] = failedSnapshots.map((snapshot) => ({
+    brandName: brandById.get(snapshot.brandId)?.name ?? "Conta sem marca",
+    platform: snapshot.platform,
+    errorMessage: snapshot.errorMessage,
+  }));
 
   const openProposalsCount = brands.reduce((sum, brand) => sum + brand.proposals.length, 0);
 
@@ -151,6 +165,8 @@ export default async function DashboardPage() {
           ) : null}
         </div>
       ) : null}
+
+      <CollectionStatusNotice neverCollected={neverCollected} failures={collectionFailures} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Campanhas ativas" value={activeRows.length} icon={Megaphone} />
