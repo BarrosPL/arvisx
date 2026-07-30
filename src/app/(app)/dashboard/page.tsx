@@ -11,6 +11,7 @@ import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
 import { verdictTone } from "@/lib/ranking/verdictLabels";
 import { formatCurrency, formatDateTime, formatTime } from "@/lib/format";
+import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
 
 /** Frase narrada pelo topo do resumo da JAMILE - reorganizacao de apresentacao dos
  * mesmos dados ja calculados (verdict por marca), nao uma agregacao nova. */
@@ -65,7 +66,7 @@ export default async function DashboardPage() {
         proposals: {
           where: {
             createdByUserId: null,
-            status: { in: ["PENDING", "NEEDS_MORE_DATA", "APPROVED", "TEST", "ADJUST", "EXECUTION_FAILED"] },
+            status: { in: OPEN_PROPOSAL_STATUSES },
           },
           select: { id: true },
         },

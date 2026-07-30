@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ProposalType, type Brand, type ProposalStatus } from "@/generated/prisma/client";
+import { ProposalType, type Brand } from "@/generated/prisma/client";
 import { collectForBrand } from "@/lib/ads/collect";
 import { collectAdLibraryForBrand } from "@/lib/ads/collectLibrary";
 import { fetchMetaInsights } from "@/lib/ads/meta";
@@ -9,9 +9,8 @@ import { fetchGoogleAdLibrary } from "@/lib/ads/googleLibrary";
 import { computeAndSaveRanking } from "@/lib/ranking/compute";
 import type { RecommendedAction } from "@/lib/ranking/verdict";
 import { evaluateProposalReadiness, deriveInitialStatus } from "@/lib/proposals/dataEnforcement";
+import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
 import { runAutonomousBudgetProposal, runAutonomousNewCampaignScan } from "@/lib/agent/autonomous";
-
-const OPEN_PROPOSAL_STATUSES: ProposalStatus[] = ["PENDING", "NEEDS_MORE_DATA", "TEST", "ADJUST"];
 
 type BrandOutcome = "proposal_created" | "no_action" | "skipped_recent" | "error";
 

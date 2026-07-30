@@ -24,6 +24,25 @@ const ALLOWED_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
   EXECUTED: [],
 };
 
+/**
+ * Status que ainda representam "algo em aberto, esperando resolução" - usado tanto
+ * pro dedup do scheduler (nunca criar proposta nova pro mesmo anuncio/campanha/tipo
+ * enquanto uma dessas ja existe) quanto pra decidir o que vira notificacao
+ * (notifications.ts). Fonte unica: antes desta constante, proactiveRound.ts e
+ * notifications.ts tinham 2 listas quase iguais, e a de proactiveRound.ts nao incluia
+ * APPROVED/EXECUTION_FAILED - uma proposta que ficava presa nesses 2 status saia do
+ * radar do dedup, e o scheduler criava uma proposta NOVA a cada rodada de 6h pro mesmo
+ * problema, empilhando duplicatas indefinidamente sem nunca resolver a original.
+ */
+export const OPEN_PROPOSAL_STATUSES: ProposalStatus[] = [
+  "PENDING",
+  "NEEDS_MORE_DATA",
+  "APPROVED",
+  "TEST",
+  "ADJUST",
+  "EXECUTION_FAILED",
+];
+
 export class InvalidProposalTransitionError extends Error {
   constructor(from: ProposalStatus, to: ProposalStatus) {
     super(`Transição de proposta inválida: ${from} → ${to}`);

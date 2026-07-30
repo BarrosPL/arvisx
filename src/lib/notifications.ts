@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { StatusTone } from "@/components/status-badge";
+import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
 
 export interface AttentionEntry {
   key: string;
@@ -9,6 +10,9 @@ export interface AttentionEntry {
   /** Abre o chat da JAMILE já perguntando sobre isso. */
   prefill: string;
   createdAt: Date;
+  /** Presente só quando a entrada é uma proposta de verdade (não erro de rodada nem
+   * veredito de marca) - usado pelo botão de excluir direto do sino. */
+  proposalId?: string;
 }
 
 function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
@@ -20,8 +24,6 @@ function firstRecommendedReason(recommendedActionsJson: unknown): string | undef
   }
   return undefined;
 }
-
-const OPEN_PROPOSAL_STATUSES = ["PENDING", "NEEDS_MORE_DATA", "APPROVED", "TEST", "ADJUST", "EXECUTION_FAILED"] as const;
 
 /**
  * Fonte única de "o que precisa da atenção do usuário" - usada pelo sino de
@@ -66,6 +68,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           description: proposal.executions[0]?.errorMessage ? `${brand.name} · ${proposal.executions[0].errorMessage}` : brand.name,
           prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) falhou?`,
           createdAt: proposal.createdAt,
+          proposalId: proposal.id,
         });
       } else if (proposal.status === "NEEDS_MORE_DATA") {
         items.push({
@@ -75,6 +78,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           description: brand.name,
           prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) que está aguardando dado.`,
           createdAt: proposal.createdAt,
+          proposalId: proposal.id,
         });
       } else {
         items.push({
@@ -84,6 +88,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           description: brand.name,
           prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}).`,
           createdAt: proposal.createdAt,
+          proposalId: proposal.id,
         });
       }
     }

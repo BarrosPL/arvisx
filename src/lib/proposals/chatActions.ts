@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { assertBrandRole } from "@/lib/session";
 import { proposeAction } from "@/lib/agent/tools/proposeAction";
 import { decideProposalAsUser } from "@/lib/proposals/decide";
@@ -55,10 +56,24 @@ export async function confirmAndExecuteAction(
  */
 export async function resolveProposal(userId: string, proposalId: string, decision: ChatDecision, note: string | null) {
   const targetStatus = DECISION_STATUS[decision];
-  await decideProposalAsUser(userId, proposalId, targetStatus, note);
 
   if (decision === "reject") {
+    await decideProposalAsUser(userId, proposalId, targetStatus, note);
     return { proposalId, executed: false, status: targetStatus };
+  }
+
+  // Achado real: uma proposta pode ficar presa em APPROVED/TEST sem nunca ter sido
+  // executada (processo caiu entre decidir e executar, ou residuo do fluxo antigo
+  // com botao Aprovar/Executar separados, removido no pivot pro chat). Chamar
+  // decideProposalAsUser de novo nesse caso quebraria (APPROVED -> APPROVED nao e
+  // uma transicao permitida em lifecycle.ts) - se ja esta no status alvo, pula a
+  // decisao (so reconfirma o papel, que decideProposalAsUser faria por dentro) e
+  // vai direto tentar executar de novo.
+  const current = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
+  if (current.status === targetStatus) {
+    await assertBrandRole(userId, current.brandId, "MANAGER");
+  } else {
+    await decideProposalAsUser(userId, proposalId, targetStatus, note);
   }
 
   const executionLog = await executeProposal(proposalId, userId);

@@ -27,8 +27,13 @@ const DEFAULT_PRIORITY = ["failed", "awaiting", "adjust", "test", "approved", "h
  * Agrupa propostas por status em abas, sem mudar a classificacao real de nenhuma -
  * so reorganiza a apresentacao. ProposalCard é só leitura (histórico/auditoria) -
  * decisão/execução acontece conversando com a JAMILE, não mais aqui.
+ *
+ * `brand` por item (em vez de um so pro board inteiro) - a pagina por marca passa
+ * cada proposta sem `brand` (ProposalCard so mostra o chip quando presente, igual
+ * sempre foi); a pagina cross-marca (src/app/(app)/proposals/page.tsx) preenche o
+ * brand de cada proposta, ja que o board mistura marcas diferentes.
  */
-export function ProposalsBoard({ proposals, brand }: { proposals: ProposalView[]; brand?: ProposalBrandView }) {
+export function ProposalsBoard({ proposals }: { proposals: (ProposalView & { brand?: ProposalBrandView })[] }) {
   const countByGroup = new Map(
     GROUPS.map((group) => [group.key, proposals.filter((p) => group.statuses.includes(p.status)).length])
   );
@@ -79,7 +84,7 @@ export function ProposalsBoard({ proposals, brand }: { proposals: ProposalView[]
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((proposal) => (
-            <ProposalCard key={proposal.id} proposal={proposal} brand={brand} />
+            <ProposalCard key={proposal.id} proposal={proposal} brand={proposal.brand} />
           ))}
         </div>
       )}

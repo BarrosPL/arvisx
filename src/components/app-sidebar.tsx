@@ -62,6 +62,7 @@ interface NavItem {
 
 export const GLOBAL_NAV: NavItem[] = [
   { href: "/dashboard", label: "Visão Geral", icon: LayoutDashboard, color: "blue" },
+  { href: "/proposals", label: "Propostas", icon: ListChecks, color: "amber" },
   { href: "/connections", label: "Conexões", icon: Plug, color: "violet" },
 ];
 
