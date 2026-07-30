@@ -465,10 +465,25 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
 /** Mesmas tools de TOOL_DEFS, com "brandId" adicionado a cada uma que le/escreve dado
  * de uma marca especifica, mais as tools de decisao/execucao (so existem aqui) -
  * usadas pelo chat por usuario. */
+/** Descricoes que fazem sentido pro scheduler (TOOL_DEFS) mas ficam erradas/enganosas
+ * no chat, onde a JAMILE ganha ferramentas de decisao/execucao que nao existem la -
+ * "propose_action" descrita como "a UNICA acao possivel" contradizia diretamente o
+ * resto do prompt e contribuia pra ela parar de proposito depois de criar a proposta,
+ * mesmo quando o usuario pediu a acao diretamente. So sobrescreve aqui, TOOL_DEFS
+ * (scheduler) mantem a descricao original, que la continua certa. */
+const CHAT_TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
+  propose_action:
+    "Cria uma proposta de acao (mantem o registro/auditoria do sistema) - e o PRIMEIRO passo, nao o unico. Se o usuario pediu essa acao diretamente (nao foi so voce sugerindo por conta propria), depois de criar a proposta continue o ciclo: confirme a acao exata com o usuario, depois chame decide_proposal e execute_proposal na mesma proposta - nao pare so nesta chamada.",
+};
+
 export const TOOL_DEFS_CHAT: ChatCompletionTool[] = [
-  ...(TOOL_DEFS as ChatCompletionFunctionTool[]).map((tool) =>
-    BRAND_SCOPED_TOOL_NAMES.has(tool.function.name) ? withBrandIdParam(tool) : tool
-  ),
+  ...(TOOL_DEFS as ChatCompletionFunctionTool[]).map((tool) => {
+    const withBrand = BRAND_SCOPED_TOOL_NAMES.has(tool.function.name) ? withBrandIdParam(tool) : tool;
+    const overrideDescription = CHAT_TOOL_DESCRIPTION_OVERRIDES[tool.function.name];
+    if (!overrideDescription) return withBrand;
+    const withBrandFn = withBrand as ChatCompletionFunctionTool;
+    return { ...withBrandFn, function: { ...withBrandFn.function, description: overrideDescription } };
+  }),
   ...DECISION_TOOL_DEFS,
 ];
 
