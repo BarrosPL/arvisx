@@ -20,7 +20,20 @@ export interface BudgetReadResult {
 }
 
 interface MetaApiErrorResponse {
-  error?: { message: string; type?: string; code?: number; error_subcode?: number };
+  error?: { message: string; type?: string; code?: number; error_subcode?: number; fbtrace_id?: string };
+}
+
+/** Monta a mensagem de erro com TODO o detalhe que o Meta manda (subcode/tipo/trace id
+ * inclusos) - o campo "message" sozinho costuma ser generico demais pra diagnosticar
+ * (ex: erros de OAuthException tipo "#240 Requires a valid user..." nao dizem o motivo
+ * real sem o subcode). Usada em toda chamada de escrita deste arquivo. */
+function formatMetaApiError(body: MetaApiErrorResponse, response: Response): string {
+  const error = body.error;
+  if (!error) return response.statusText;
+  const parts = [`(#${error.code ?? "?"}${error.error_subcode ? `/${error.error_subcode}` : ""}) ${error.message}`];
+  if (error.type) parts.push(`tipo: ${error.type}`);
+  if (error.fbtrace_id) parts.push(`fbtrace_id: ${error.fbtrace_id}`);
+  return parts.join(" | ");
 }
 
 /**
@@ -41,7 +54,7 @@ export async function setMetaAdStatus(
     const response = await fetch(url, { method: "POST" });
     const body = (await response.json()) as MetaApiErrorResponse & { success?: boolean };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return { ok: true, raw: body };
   } catch (error) {
@@ -69,7 +82,7 @@ export async function setMetaCampaignStatus(
     const response = await fetch(url, { method: "POST" });
     const body = (await response.json()) as MetaApiErrorResponse & { success?: boolean };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return { ok: true, raw: body };
   } catch (error) {
@@ -98,7 +111,7 @@ export async function setMetaAdSetStatus(
     const response = await fetch(url, { method: "POST" });
     const body = (await response.json()) as MetaApiErrorResponse & { success?: boolean };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return { ok: true, raw: body };
   } catch (error) {
@@ -122,7 +135,7 @@ async function fetchBudgetFields(
       [key: string]: unknown;
     };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return { dailyBudget: body.daily_budget, lifetimeBudget: body.lifetime_budget, extra: body };
   } catch (error) {
@@ -183,7 +196,7 @@ export async function setMetaBudget(
     const response = await fetch(url, { method: "POST" });
     const body = (await response.json()) as MetaApiErrorResponse & { success?: boolean };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return { ok: true, raw: body };
   } catch (error) {
@@ -226,7 +239,7 @@ export async function getMetaAdDetails(credential: PlatformCredential, adId: str
       };
     };
     if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+      throw new Error(`Meta API error: ${formatMetaApiError(body, response)}`);
     }
     return {
       creativeId: body.creative?.id ?? null,
