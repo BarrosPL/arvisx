@@ -454,7 +454,7 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "adjust_proposal",
       description:
-        "Edita uma proposta PENDENTE (titulo/acao sugerida/orcamento) a pedido do usuario e a deixa pronta pra decisao de novo. SEMPRE reformule o valor novo exato e peca confirmacao antes de chamar isto.",
+        "Edita uma proposta (titulo/acao sugerida/orcamento/ids reais/metricas) e a deixa pronta (PENDING) pra decisao de novo. Funciona tanto numa proposta PENDENTE quanto numa presa em NEEDS_MORE_DATA - nesse segundo caso E A UNICA FERRAMENTA que consegue tirar a proposta desse estado: preencha platformCampaignId/platformAdId/platformAdSetId e/ou metricsJson com o dado real que faltava (busque com get_metrics/get_ad_sets antes) - se ainda faltar algo depois disso, a chamada falha explicando exatamente o que falta ainda. Depois que isto funcionar, chame resolve_proposal (decision=approve) pra aprovar e executar. SEMPRE reformule o valor novo exato e peca confirmacao antes de chamar isto.",
       parameters: {
         type: "object",
         properties: {
@@ -463,6 +463,10 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
           title: { type: "string" },
           suggestedAction: { type: "string" },
           proposedBudget: { type: "number", exclusiveMinimum: 0 },
+          platformCampaignId: { type: "string", description: "Preenche/corrige o id real da campanha - use pra completar uma proposta presa em NEEDS_MORE_DATA por falta de id." },
+          platformAdId: { type: "string", description: "Preenche/corrige o id real do anuncio - use pra completar uma proposta presa em NEEDS_MORE_DATA por falta de id." },
+          platformAdSetId: { type: "string", description: "Preenche/corrige o id real do conjunto de anuncios/AdSet ou grupo/AdGroup." },
+          metricsJson: { type: "object", description: "Metricas reais adicionais (spend/ctr/cpc/cpl/cpa/conversions) - use pra completar uma proposta presa em NEEDS_MORE_DATA por falta de metrica financeira." },
           note: { type: "string", description: "O que mudou e por que." },
         },
         required: ["brandId", "proposalId", "note"],
@@ -596,7 +600,15 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const proposal = await adjustProposalAsUser(
           ctx.userId,
           args.proposalId,
-          { title: args.title, suggestedAction: args.suggestedAction, proposedBudget: args.proposedBudget },
+          {
+            title: args.title,
+            suggestedAction: args.suggestedAction,
+            proposedBudget: args.proposedBudget,
+            platformCampaignId: args.platformCampaignId,
+            platformAdId: args.platformAdId,
+            platformAdSetId: args.platformAdSetId,
+            metricsJson: args.metricsJson,
+          },
           args.note
         );
         return { proposalId: proposal.id, status: proposal.status };

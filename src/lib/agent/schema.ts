@@ -256,6 +256,10 @@ export const adjustProposalChatArgsSchema = z.object({
   title: z.string().min(3).optional(),
   suggestedAction: z.string().min(3).optional(),
   proposedBudget: z.number().positive().optional(),
+  platformCampaignId: z.string().min(1).optional(),
+  platformAdId: z.string().min(1).optional(),
+  platformAdSetId: z.string().min(1).optional(),
+  metricsJson: z.record(z.string(), z.number()).optional(),
   note: z.string().min(1),
 });
 
