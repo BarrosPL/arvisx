@@ -4,38 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
-import { type ProposalAbTestView } from "@/components/proposal-card";
-import { ProposalSummaryRow } from "@/components/proposal-summary-row";
 import { BrandSummaryRow } from "@/components/brand-summary-row";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
-import { EmptyState } from "@/components/empty-state";
-import { AttentionItem } from "@/components/attention-item";
 import { verdictTone } from "@/lib/ranking/verdictLabels";
 import { formatCurrency, formatDateTime, formatTime } from "@/lib/format";
-
-function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
-  if (!Array.isArray(recommendedActionsJson) || recommendedActionsJson.length === 0) return undefined;
-  const first = recommendedActionsJson[0];
-  if (first && typeof first === "object" && "reason" in first) {
-    const reason = (first as { reason?: unknown }).reason;
-    return typeof reason === "string" ? reason : undefined;
-  }
-  return undefined;
-}
-
-interface AttentionEntry {
-  key: string;
-  tone: "danger" | "warning";
-  title: string;
-  description?: string;
-  /** Abre o chat da JAMILE já perguntando sobre isso - não navega mais pra uma página. */
-  prefill: string;
-}
-
-const MAX_ATTENTION_ITEMS = 6;
 
 /** Frase narrada pelo topo do resumo da JAMILE - reorganizacao de apresentacao dos
  * mesmos dados ja calculados (verdict por marca), nao uma agregacao nova. */
@@ -84,10 +59,15 @@ export default async function DashboardPage() {
       orderBy: { priorityOrder: "asc" },
       include: {
         rankingSnapshots: { orderBy: { computedAt: "desc" }, take: 1 },
+        // So conta proposta de rodada pro-ativa (createdByUserId null) - pedido direto
+        // no chat executa na hora e nunca fica "aguardando decisão" aqui (ver
+        // lib/notifications.ts, mesmo filtro usado pelo sino de notificação).
         proposals: {
-          where: { status: { in: ["PENDING", "NEEDS_MORE_DATA", "APPROVED", "TEST", "ADJUST", "EXECUTION_FAILED"] } },
-          orderBy: { createdAt: "desc" },
-          include: { executions: { orderBy: { executedAt: "desc" }, take: 1 }, abTest: true },
+          where: {
+            createdByUserId: null,
+            status: { in: ["PENDING", "NEEDS_MORE_DATA", "APPROVED", "TEST", "ADJUST", "EXECUTION_FAILED"] },
+          },
+          select: { id: true },
         },
       },
     }),
@@ -112,29 +92,7 @@ export default async function DashboardPage() {
     spendByBrandId.set(snapshot.brandId, (spendByBrandId.get(snapshot.brandId) ?? 0) + Number(snapshot.spend));
   }
 
-  const allOpenProposals = brands
-    .flatMap((brand) =>
-      brand.proposals.map((proposal) => ({
-        brand: { id: brand.id, name: brand.name, slug: brand.slug },
-        proposal: {
-          ...proposal,
-          metricsJson: (proposal.metricsJson as Record<string, unknown>) ?? {},
-          createdAt: proposal.createdAt.toISOString(),
-          lastExecutionError: proposal.executions[0]?.errorMessage ?? null,
-          abTest: proposal.abTest
-            ? {
-                status: proposal.abTest.status,
-                controlValue: Number(proposal.abTest.controlValue),
-                variantValue: Number(proposal.abTest.variantValue),
-                endsAt: proposal.abTest.endsAt.toISOString(),
-                winner: proposal.abTest.winner,
-                resultSummary: (proposal.abTest.resultSummary as ProposalAbTestView["resultSummary"]) ?? null,
-              }
-            : null,
-        },
-      }))
-    )
-    .sort((a, b) => (a.proposal.createdAt < b.proposal.createdAt ? 1 : -1));
+  const openProposalsCount = brands.reduce((sum, brand) => sum + brand.proposals.length, 0);
 
   const runSummary = latestRun
     ? (() => {
@@ -147,60 +105,6 @@ export default async function DashboardPage() {
 
   const totalSpend = Array.from(spendByBrandId.values()).reduce((sum, value) => sum + value, 0);
   const activeBrandsCount = brands.filter((brand) => brand.status === "ACTIVE").length;
-
-  const attentionItems: AttentionEntry[] = [];
-
-  for (const { brand, proposal } of allOpenProposals) {
-    if (proposal.status === "EXECUTION_FAILED") {
-      attentionItems.push({
-        key: `exec-${proposal.id}`,
-        tone: "danger",
-        title: `Falha ao executar: ${proposal.title}`,
-        description: proposal.lastExecutionError ? `${brand.name} · ${proposal.lastExecutionError}` : brand.name,
-        prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) falhou?`,
-      });
-    }
-  }
-  if (latestRun) {
-    for (const result of latestRun.brandResults) {
-      if (result.outcome === "error") {
-        attentionItems.push({
-          key: `run-${result.id}`,
-          tone: "danger",
-          title: `Falha na última análise de ${result.brand.name}`,
-          description: result.errorMessage ?? undefined,
-          prefill: `Por que a última análise da marca ${result.brand.name} falhou?`,
-        });
-      }
-    }
-  }
-  for (const { brand, proposal } of allOpenProposals) {
-    if (proposal.status === "NEEDS_MORE_DATA") {
-      attentionItems.push({
-        key: `data-${proposal.id}`,
-        tone: "warning",
-        title: `Precisa de mais dados: ${proposal.title}`,
-        description: brand.name,
-        prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) que está aguardando dado.`,
-      });
-    }
-  }
-  for (const brand of brands) {
-    const snapshot = brand.rankingSnapshots[0];
-    if (snapshot?.verdict === "RUIM") {
-      const reason = firstRecommendedReason(snapshot.recommendedActionsJson);
-      attentionItems.push({
-        key: `verdict-${brand.id}`,
-        tone: "warning",
-        title: `${brand.name} precisa de atenção`,
-        description: reason ? `Diagnóstico: ${reason}` : undefined,
-        prefill: `Por que a marca ${brand.name} está com diagnóstico ruim? O que você recomenda?`,
-      });
-    }
-  }
-
-  const visibleAttentionItems = attentionItems.slice(0, MAX_ATTENTION_ITEMS);
-  const hiddenAttentionCount = attentionItems.length - visibleAttentionItems.length;
 
   const greetingName = session!.user.name ?? session!.user.email?.split("@")[0] ?? "";
   const narrativeSummary = buildNarrativeSummary(
@@ -239,9 +143,9 @@ export default async function DashboardPage() {
         />
         <StatCard
           label="Propostas pendentes"
-          value={allOpenProposals.length}
+          value={openProposalsCount}
           icon={Inbox}
-          tone={allOpenProposals.length > 0 ? "warning" : "default"}
+          tone={openProposalsCount > 0 ? "warning" : "default"}
         />
         <StatCard label="Investimento total" value={formatCurrency(totalSpend)} icon={Wallet} />
         <StatCard
@@ -249,25 +153,6 @@ export default async function DashboardPage() {
           value={runSummary ? formatTime(runSummary.startedAt, { hour: "2-digit", minute: "2-digit" }) : "—"}
           icon={Clock}
         />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Atenção necessária</h2>
-        {visibleAttentionItems.length === 0 ? (
-          <EmptyState
-            title="Nada precisa da sua atenção agora"
-            description="Sem falhas de execução, propostas travadas ou marcas em mau estado no momento."
-          />
-        ) : (
-          <div className="flex flex-col gap-2">
-            {visibleAttentionItems.map((item) => (
-              <AttentionItem key={item.key} tone={item.tone} title={item.title} description={item.description} prefill={item.prefill} />
-            ))}
-            {hiddenAttentionCount > 0 ? (
-              <span className="text-xs text-muted-foreground">e mais {hiddenAttentionCount} item(ns)</span>
-            ) : null}
-          </div>
-        )}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -298,24 +183,6 @@ export default async function DashboardPage() {
             );
           })}
         </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Propostas aguardando decisão ({allOpenProposals.length})
-        </h2>
-        {allOpenProposals.length === 0 ? (
-          <EmptyState
-            title="Nenhuma proposta pendente"
-            description="Nenhuma marca tem proposta aberta no momento. Novas propostas aparecem aqui assim que a JAMILE encontrar uma oportunidade ou risco."
-          />
-        ) : (
-          <div className="flex flex-col gap-2">
-            {allOpenProposals.map(({ brand, proposal }) => (
-              <ProposalSummaryRow key={proposal.id} proposal={proposal} brand={brand} />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

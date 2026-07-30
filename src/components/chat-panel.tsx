@@ -33,9 +33,9 @@ const TOOL_LABEL: Record<string, string> = {
   search_public_ad_library: "Pesquisou a biblioteca pública de anúncios",
   propose_action: "Criou uma proposta",
   get_proposal: "Consultou os detalhes de uma proposta",
-  decide_proposal: "Decidiu sobre uma proposta",
+  confirm_and_execute_action: "Confirmou e executou uma ação",
+  resolve_proposal: "Decidiu e executou uma proposta",
   adjust_proposal: "Ajustou uma proposta",
-  execute_proposal: "Executou uma proposta na plataforma",
   delete_proposal: "Excluiu uma proposta",
   research_market: "Pesquisa de mercado",
   scan_competitors: "Pesquisa de concorrência",
@@ -71,10 +71,14 @@ function toolSummary(message: ChatMessageView): string {
   if (message.toolName === "get_proposal" && typeof parsed.status === "string") {
     return `${label} · status: ${parsed.status}`;
   }
-  if ((message.toolName === "decide_proposal" || message.toolName === "adjust_proposal") && typeof parsed.status === "string") {
+  if (message.toolName === "adjust_proposal" && typeof parsed.status === "string") {
     return `${label} · novo status: ${parsed.status}`;
   }
-  if (message.toolName === "execute_proposal") {
+  if (message.toolName === "confirm_and_execute_action" || message.toolName === "resolve_proposal") {
+    if (parsed.executed === false) {
+      const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
+      return `${label} · status: ${parsed.status}${missing.length ? ` (faltando: ${missing.join(", ")})` : ""}`;
+    }
     return parsed.executionStatus === "SUCCESS"
       ? `${label} · executado com sucesso`
       : `${label} · falhou (${typeof parsed.errorMessage === "string" ? parsed.errorMessage : "erro desconhecido"})`;
@@ -85,13 +89,17 @@ function toolSummary(message: ChatMessageView): string {
 
 /** Proposta NEW_CAMPAIGN (Meta) que acabou de nascer/ser consultada e ainda falta a
  * imagem do anuncio - unico caso onde o chat mostra um uploader inline (ver
- * ChatCreativeAssetUpload abaixo). Cobre tanto propose_action (campo "missing" ja diz
- * isso) quanto get_proposal (campos "type"/"status"/"hasCreativeAsset" explicitos). */
+ * ChatCreativeAssetUpload abaixo). Cobre propose_action e confirm_and_execute_action
+ * (campo "missing" ja diz isso) e get_proposal (campos "type"/"status"/
+ * "hasCreativeAsset" explicitos). */
 function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: string } | null {
   for (const tool of tools) {
     const parsed = parseToolContent(tool);
     if (!parsed) continue;
-    if (tool.toolName === "propose_action" && typeof parsed.proposalId === "string") {
+    if (
+      (tool.toolName === "propose_action" || tool.toolName === "confirm_and_execute_action") &&
+      typeof parsed.proposalId === "string"
+    ) {
       const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
       if (missing.includes("imagem do anúncio")) return { proposalId: parsed.proposalId };
     }
@@ -118,7 +126,7 @@ interface CreatedProposalInfo {
  * contexto fixo (o turno pode ter tocado varias marcas). */
 function createdProposalInfo(tools: ChatMessageView[]): CreatedProposalInfo | null {
   for (const tool of tools) {
-    if (tool.toolName !== "propose_action") continue;
+    if (tool.toolName !== "propose_action" && tool.toolName !== "confirm_and_execute_action") continue;
     const parsed = parseToolContent(tool);
     if (parsed?.proposalId) return { brandSlug: tool.brandSlug, brandName: tool.brandName };
   }

@@ -6,6 +6,10 @@ export interface ProposeActionContext {
   brandId: string;
   /** Ausente quando a proposta vem de uma analise autonoma do scheduler, sem chat associado. */
   threadId?: string;
+  /** Presente so quando chamado a partir de uma conversa real (chat) - vira createdByUserId,
+   * o sinal real de "isto foi criado com um usuario presente" usado pra filtrar notificacoes
+   * (so proposta com createdByUserId null - scheduler/agente autonomo - vira notificacao). */
+  userId?: string | null;
 }
 
 /**
@@ -27,7 +31,7 @@ export async function proposeAction(ctx: ProposeActionContext, payload: Proposal
     data: {
       brandId: ctx.brandId,
       threadId: ctx.threadId ?? null,
-      createdByUserId: null,
+      createdByUserId: ctx.userId ?? null,
       type: payload.type,
       status,
       title: payload.title,

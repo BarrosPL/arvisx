@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   campaignPlanSchema,
   proposalPayloadSchema,
-  decideProposalChatArgsSchema,
+  resolveProposalChatArgsSchema,
   adjustProposalChatArgsSchema,
-  executeProposalChatArgsSchema,
+  confirmAndExecuteActionChatArgsSchema,
   getProposalChatArgsSchema,
 } from "./schema";
 
@@ -121,18 +121,18 @@ describe("tools de decisão/execução (chat)", () => {
     expect(getProposalChatArgsSchema.safeParse({ brandId }).success).toBe(false);
   });
 
-  it("decide_proposal aceita approve/test sem note", () => {
-    expect(decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "approve" }).success).toBe(true);
-    expect(decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "test" }).success).toBe(true);
+  it("resolve_proposal aceita approve/test sem note", () => {
+    expect(resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "approve" }).success).toBe(true);
+    expect(resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "test" }).success).toBe(true);
   });
 
-  it("decide_proposal recusa reject sem note", () => {
-    const result = decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "reject" });
+  it("resolve_proposal recusa reject sem note", () => {
+    const result = resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "reject" });
     expect(result.success).toBe(false);
   });
 
-  it("decide_proposal aceita reject com note", () => {
-    const result = decideProposalChatArgsSchema.safeParse({
+  it("resolve_proposal aceita reject com note", () => {
+    const result = resolveProposalChatArgsSchema.safeParse({
       brandId,
       proposalId,
       decision: "reject",
@@ -141,8 +141,8 @@ describe("tools de decisão/execução (chat)", () => {
     expect(result.success).toBe(true);
   });
 
-  it("decide_proposal recusa decision fora do enum (ex: adjust, que agora é tool separada)", () => {
-    const result = decideProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "adjust" });
+  it("resolve_proposal recusa decision fora do enum (ex: adjust, que agora é tool separada)", () => {
+    const result = resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "adjust" });
     expect(result.success).toBe(false);
   });
 
@@ -153,7 +153,22 @@ describe("tools de decisão/execução (chat)", () => {
     expect(adjustProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(false);
   });
 
-  it("execute_proposal só exige brandId e proposalId", () => {
-    expect(executeProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(true);
+  it("confirm_and_execute_action exige o payload completo da proposta (mesmo formato de propose_action) mais brandId", () => {
+    expect(confirmAndExecuteActionChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(false);
+    const fullPayload = {
+      brandId,
+      type: "PAUSE_AD" as const,
+      title: "Pausar anúncio com CPL alto",
+      reason: "CPL 40% acima da média das últimas coletas",
+      metricsJson: { cpl: 25 },
+      suggestedAction: "Pausar o anúncio até revisar o criativo",
+      risk: "Perda de alcance temporária",
+      rollbackPlan: "Reativar o anúncio a qualquer momento",
+      platform: "META" as const,
+      platformCampaignId: "camp_1",
+      platformAdId: "ad_1",
+      platformAdSetId: "adset_1",
+    };
+    expect(confirmAndExecuteActionChatArgsSchema.safeParse(fullPayload).success).toBe(true);
   });
 });

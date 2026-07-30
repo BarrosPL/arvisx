@@ -14,20 +14,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GLOBAL_NAV, brandNavFor, type BrandNavItem } from "@/components/app-sidebar";
+import { NotificationBell } from "@/components/notification-bell";
+import type { AttentionEntry } from "@/lib/notifications";
 
 /**
  * Header global - titulo/breadcrumb da secao atual (deriva do pathname, mesma logica
- * de deteccao de marca ativa do AppSidebar) + menu do usuario, substituindo o botao
- * "Sair" solto que competia visualmente com o resto do produto.
+ * de deteccao de marca ativa do AppSidebar) + sino de notificacao + menu do usuario,
+ * substituindo o botao "Sair" solto que competia visualmente com o resto do produto.
  */
 export function AppHeader({
   brands,
   userEmail,
   onSignOut,
+  notifications,
 }: {
   brands: BrandNavItem[];
   userEmail: string;
   onSignOut: () => Promise<void>;
+  notifications: AttentionEntry[];
 }) {
   const pathname = usePathname();
 
@@ -62,35 +66,38 @@ export function AppHeader({
         </nav>
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={`Menu do usuário — ${userEmail}`}
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-muted focus-visible:bg-muted"
-        >
-          <div className="flex size-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium uppercase text-muted-foreground">
-            {userEmail.slice(0, 2)}
-          </div>
-          <span className="hidden max-w-40 truncate text-muted-foreground sm:inline">{userEmail}</span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="flex items-center gap-2 font-normal text-muted-foreground">
-              <User className="size-3.5" />
-              <span className="truncate">{userEmail}</span>
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => {
-              void onSignOut();
-            }}
+      <div className="flex items-center gap-1">
+        <NotificationBell items={notifications} />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={`Menu do usuário — ${userEmail}`}
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-muted focus-visible:bg-muted"
           >
-            <LogOut />
-            Sair
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <div className="flex size-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium uppercase text-muted-foreground">
+              {userEmail.slice(0, 2)}
+            </div>
+            <span className="hidden max-w-40 truncate text-muted-foreground sm:inline">{userEmail}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="flex items-center gap-2 font-normal text-muted-foreground">
+                <User className="size-3.5" />
+                <span className="truncate">{userEmail}</span>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                void onSignOut();
+              }}
+            >
+              <LogOut />
+              Sair
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
   );
 }

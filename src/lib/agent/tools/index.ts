@@ -17,9 +17,9 @@ import {
   searchPublicAdLibraryChatArgsSchema,
   proposalPayloadChatSchema,
   getProposalChatArgsSchema,
-  decideProposalChatArgsSchema,
+  resolveProposalChatArgsSchema,
   adjustProposalChatArgsSchema,
-  executeProposalChatArgsSchema,
+  confirmAndExecuteActionChatArgsSchema,
   deleteProposalChatArgsSchema,
 } from "@/lib/agent/schema";
 import { getRanking } from "./getRanking";
@@ -32,8 +32,8 @@ import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
 import { proposeAction } from "./proposeAction";
 import { researchStub } from "./researchStub";
 import { getProposal } from "./getProposal";
-import { decideProposalAsUser, adjustProposalAsUser } from "@/lib/proposals/decide";
-import { executeProposal } from "@/lib/execution/executor";
+import { adjustProposalAsUser } from "@/lib/proposals/decide";
+import { confirmAndExecuteAction, resolveProposal } from "@/lib/proposals/chatActions";
 import { deleteProposalAsUser } from "@/lib/proposals/deleteProposal";
 
 export interface ToolContext {
@@ -42,13 +42,109 @@ export interface ToolContext {
   threadId?: string;
 }
 
+const BRAND_ID_PARAM = {
+  type: "string",
+  description: "Id exato da marca (da lista de marcas do usuario no prompt de sistema) a que essa chamada se refere.",
+};
+
+/** Formato completo do payload de uma proposta - reaproveitado por propose_action
+ * (TOOL_DEFS, sem brandId - vem do ToolContext) e confirm_and_execute_action
+ * (DECISION_TOOL_DEFS, com brandId - o chat escolhe a marca por chamada). */
+const PROPOSAL_PAYLOAD_PROPERTIES = {
+  type: {
+    type: "string",
+    enum: ["NEW_CAMPAIGN", "PAUSE_AD", "ACTIVATE_AD", "ADJUST_BUDGET", "CREATE_AD_VARIATION", "CREATE_AB_TEST", "OTHER"],
+  },
+  title: { type: "string" },
+  reason: { type: "string", description: "Justificativa citando dado real ou HIPOTESE explicita." },
+  metricsJson: { type: "object", description: "Metricas reais que embasam a proposta (spend, ctr, cpc, cpl, cpa, conversions etc)." },
+  suggestedAction: { type: "string" },
+  risk: { type: "string" },
+  rollbackPlan: { type: "string" },
+  platform: { type: ["string", "null"], enum: ["META", "GOOGLE", null] },
+  platformCampaignId: { type: ["string", "null"], description: "ID real da campanha na plataforma, se a acao for sobre algo existente." },
+  platformAdId: { type: ["string", "null"], description: "ID real do anuncio na plataforma, se a acao for sobre algo existente." },
+  platformAdSetId: {
+    type: ["string", "null"],
+    description: "Obrigatorio quando type=ADJUST_BUDGET no Meta (id do AdSet) - e onde a execucao real vai mudar a verba.",
+  },
+  campaignPlan: {
+    type: "object",
+    description:
+      "Obrigatorio para NEW_CAMPAIGN. Plano completo da campanha nova. Pro Meta, preencha metaTargeting (usa headline/primaryText/description/callToAction - um so anuncio de imagem, a imagem em si e anexada por um humano depois, voce nunca gera/promete imagem). Pro Google, preencha googleKeywords E googleAd (Responsive Search Ad - so texto, sem imagem) - headline/primaryText/description sozinhos NAO bastam pro Google, o RSA exige varias variacoes.",
+    properties: {
+      campaignName: { type: "string" },
+      dailyBudget: { type: "number", exclusiveMinimum: 0 },
+      headline: { type: "string" },
+      primaryText: { type: "string" },
+      description: { type: "string" },
+      callToAction: {
+        type: "string",
+        description: "So usado no Meta - o Google RSA nao tem call-to-action.",
+        enum: ["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "SUBSCRIBE", "CONTACT_US", "DOWNLOAD", "GET_QUOTE", "BOOK_TRAVEL", "APPLY_NOW", "GET_OFFER"],
+      },
+      finalUrl: { type: "string", format: "uri" },
+      metaTargeting: {
+        type: "object",
+        properties: {
+          countries: { type: "array", items: { type: "string" }, minItems: 1 },
+          ageMin: { type: "integer", minimum: 18, maximum: 65 },
+          ageMax: { type: "integer", minimum: 18, maximum: 65 },
+          interests: { type: "array", items: { type: "string" }, minItems: 1 },
+        },
+        required: ["countries", "ageMin", "ageMax", "interests"],
+        additionalProperties: false,
+      },
+      googleKeywords: {
+        type: "array",
+        minItems: 3,
+        items: {
+          type: "object",
+          properties: {
+            text: { type: "string" },
+            matchType: { type: "string", enum: ["BROAD", "PHRASE", "EXACT"] },
+          },
+          required: ["text", "matchType"],
+          additionalProperties: false,
+        },
+      },
+      googleAd: {
+        type: "object",
+        description: "Obrigatorio junto de googleKeywords. Variacoes de texto do Responsive Search Ad.",
+        properties: {
+          headlines: { type: "array", items: { type: "string", maxLength: 30 }, minItems: 3, maxItems: 15 },
+          descriptions: { type: "array", items: { type: "string", maxLength: 90 }, minItems: 2, maxItems: 4 },
+        },
+        required: ["headlines", "descriptions"],
+        additionalProperties: false,
+      },
+    },
+    required: ["campaignName", "dailyBudget", "headline", "primaryText", "description", "callToAction", "finalUrl"],
+    additionalProperties: false,
+  },
+} as const;
+
+const PROPOSAL_PAYLOAD_REQUIRED = [
+  "type",
+  "title",
+  "reason",
+  "metricsJson",
+  "suggestedAction",
+  "risk",
+  "rollbackPlan",
+  "platform",
+  "platformCampaignId",
+  "platformAdId",
+  "platformAdSetId",
+];
+
 /**
  * Definicao das tools expostas ao modelo pra rodada AUTONOMA do scheduler
  * (autonomous.ts) - "propose_action" e a unica acao possivel aqui, e continua sendo:
  * a rodada automatica nunca decide nem executa nada sozinha, so cria propostas
  * deterministicas/analisa orcamento, igual sempre foi. As tools de decisao/execucao
- * reais (decide_proposal/adjust_proposal/execute_proposal) so existem no caminho de
- * chat interativo abaixo (TOOL_DEFS_CHAT) - nunca aqui.
+ * reais (confirm_and_execute_action/resolve_proposal/adjust_proposal) so existem no
+ * caminho de chat interativo abaixo (TOOL_DEFS_CHAT) - nunca aqui.
  */
 export const TOOL_DEFS: ChatCompletionTool[] = [
   {
@@ -174,100 +270,8 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
         "Cria uma proposta de acao pendente de aprovacao humana. Esta e a UNICA acao que voce pode tomar - nunca executa nada de fato.",
       parameters: {
         type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["NEW_CAMPAIGN", "PAUSE_AD", "ACTIVATE_AD", "ADJUST_BUDGET", "CREATE_AD_VARIATION", "CREATE_AB_TEST", "OTHER"],
-          },
-          title: { type: "string" },
-          reason: { type: "string", description: "Justificativa citando dado real ou HIPOTESE explicita." },
-          metricsJson: { type: "object", description: "Metricas reais que embasam a proposta (spend, ctr, cpc, cpl, cpa, conversions etc)." },
-          suggestedAction: { type: "string" },
-          risk: { type: "string" },
-          rollbackPlan: { type: "string" },
-          platform: { type: ["string", "null"], enum: ["META", "GOOGLE", null] },
-          platformCampaignId: { type: ["string", "null"], description: "ID real da campanha na plataforma, se a acao for sobre algo existente." },
-          platformAdId: { type: ["string", "null"], description: "ID real do anuncio na plataforma, se a acao for sobre algo existente." },
-          platformAdSetId: {
-            type: ["string", "null"],
-            description: "Obrigatorio quando type=ADJUST_BUDGET no Meta (id do AdSet) - e onde a execucao real vai mudar a verba.",
-          },
-          campaignPlan: {
-            type: "object",
-            description:
-              "Obrigatorio para NEW_CAMPAIGN. Plano completo da campanha nova. Pro Meta, preencha metaTargeting (usa headline/primaryText/description/callToAction - um so anuncio de imagem, a imagem em si e anexada por um humano depois, voce nunca gera/promete imagem). Pro Google, preencha googleKeywords E googleAd (Responsive Search Ad - so texto, sem imagem) - headline/primaryText/description sozinhos NAO bastam pro Google, o RSA exige varias variacoes.",
-            properties: {
-              campaignName: { type: "string" },
-              dailyBudget: { type: "number", exclusiveMinimum: 0 },
-              headline: { type: "string" },
-              primaryText: { type: "string" },
-              description: { type: "string" },
-              callToAction: {
-                type: "string",
-                description: "So usado no Meta - o Google RSA nao tem call-to-action.",
-                enum: ["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "SUBSCRIBE", "CONTACT_US", "DOWNLOAD", "GET_QUOTE", "BOOK_TRAVEL", "APPLY_NOW", "GET_OFFER"],
-              },
-              finalUrl: { type: "string", format: "uri" },
-              metaTargeting: {
-                type: "object",
-                properties: {
-                  countries: { type: "array", items: { type: "string" }, minItems: 1 },
-                  ageMin: { type: "integer", minimum: 18, maximum: 65 },
-                  ageMax: { type: "integer", minimum: 18, maximum: 65 },
-                  interests: { type: "array", items: { type: "string" }, minItems: 1 },
-                },
-                required: ["countries", "ageMin", "ageMax", "interests"],
-                additionalProperties: false,
-              },
-              googleKeywords: {
-                type: "array",
-                minItems: 3,
-                items: {
-                  type: "object",
-                  properties: {
-                    text: { type: "string" },
-                    matchType: { type: "string", enum: ["BROAD", "PHRASE", "EXACT"] },
-                  },
-                  required: ["text", "matchType"],
-                  additionalProperties: false,
-                },
-              },
-              googleAd: {
-                type: "object",
-                description: "Obrigatorio junto de googleKeywords. Variacoes de texto do Responsive Search Ad.",
-                properties: {
-                  headlines: { type: "array", items: { type: "string", maxLength: 30 }, minItems: 3, maxItems: 15 },
-                  descriptions: { type: "array", items: { type: "string", maxLength: 90 }, minItems: 2, maxItems: 4 },
-                },
-                required: ["headlines", "descriptions"],
-                additionalProperties: false,
-              },
-            },
-            required: [
-              "campaignName",
-              "dailyBudget",
-              "headline",
-              "primaryText",
-              "description",
-              "callToAction",
-              "finalUrl",
-            ],
-            additionalProperties: false,
-          },
-        },
-        required: [
-          "type",
-          "title",
-          "reason",
-          "metricsJson",
-          "suggestedAction",
-          "risk",
-          "rollbackPlan",
-          "platform",
-          "platformCampaignId",
-          "platformAdId",
-          "platformAdSetId",
-        ],
+        properties: PROPOSAL_PAYLOAD_PROPERTIES,
+        required: PROPOSAL_PAYLOAD_REQUIRED,
         additionalProperties: false,
       },
     },
@@ -382,11 +386,6 @@ function withBrandIdParam(tool: ChatCompletionFunctionTool): ChatCompletionFunct
   };
 }
 
-const BRAND_ID_PARAM = {
-  type: "string",
-  description: "Id exato da marca (da lista de marcas do usuario no prompt de sistema) a que essa chamada se refere.",
-};
-
 /**
  * Tools de decisao/execucao real - so existem aqui, nunca em TOOL_DEFS (rodada
  * autonoma do scheduler). Isso e o portao: a JAMILE so ganha poder de
@@ -411,9 +410,23 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "decide_proposal",
+      name: "confirm_and_execute_action",
       description:
-        "Aprova, rejeita, ou marca como 'em teste' uma proposta PENDENTE. SEMPRE reformule a acao exata numa frase clara e peca confirmacao explicita do usuario antes de chamar isto - nao ha como desfazer uma aprovacao sozinho depois. decision=reject exige note explicando o motivo. Isto NUNCA executa nada na plataforma - so muda o status da proposta. Pra mudar algo da proposta (titulo/acao/orcamento) em vez de so aprovar/rejeitar como esta, use adjust_proposal.",
+        "Pra uma acao NOVA (ainda sem proposta criada) que o usuario ACABOU de confirmar (pedida por ele diretamente, ou sugerida por voce e confirmada agora): cria o registro da proposta E JA APROVA E EXECUTA de verdade na plataforma (Meta/Google Ads), tudo numa chamada so - gasta dinheiro real / muda campanha real, imediatamente. SEMPRE reformule a acao exata e peca confirmacao explicita do usuario ANTES de chamar isto - sem excecao. Mesmo formato de payload de propose_action. Se faltar dado real ou (NEW_CAMPAIGN/Meta) a imagem do anuncio, isto NAO executa - devolve o motivo pra voce resolver (buscar mais dado, ou pedir a imagem) e depois chamar resolve_proposal na mesma proposta pra terminar. Se a proposta for NEW_CAMPAIGN, avise que ela nasce PAUSADA e precisa ser ativada manualmente na plataforma depois de conferida.",
+      parameters: {
+        type: "object",
+        properties: { brandId: BRAND_ID_PARAM, ...PROPOSAL_PAYLOAD_PROPERTIES },
+        required: ["brandId", ...PROPOSAL_PAYLOAD_REQUIRED],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "resolve_proposal",
+      description:
+        "Decide sobre uma proposta que JA EXISTE (veio de get_proposal, de uma notificacao, ou de um confirm_and_execute_action anterior que ficou faltando dado/imagem e agora esta pronto) - E JA EXECUTA de verdade na plataforma quando aprovada, tudo numa chamada so. decision=approve ou test: aprova e executa imediatamente (gasta dinheiro real / muda campanha real). decision=reject: so rejeita, nao executa nada (exige note com o motivo). SEMPRE reformule a acao exata e peca confirmacao explicita do usuario ANTES de chamar isto com approve/test - sem excecao. Se for NEW_CAMPAIGN, avise que ela nasce PAUSADA.",
       parameters: {
         type: "object",
         properties: {
@@ -451,20 +464,6 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "execute_proposal",
-      description:
-        "EXECUTA DE VERDADE na plataforma (Meta/Google Ads) uma proposta ja aprovada ou em teste - gasta dinheiro real / muda campanha real, imediatamente. SEMPRE reformule a acao exata que vai acontecer e peca confirmacao explicita do usuario antes de chamar isto - sem excecao. Se a proposta for NEW_CAMPAIGN, avise antes que a campanha nasce PAUSADA e precisa ser ativada manualmente na plataforma depois de conferida. So funciona se a proposta ja estiver aprovada ou em teste (chame decide_proposal antes, se ainda nao estiver).",
-      parameters: {
-        type: "object",
-        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
-        required: ["brandId", "proposalId"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "delete_proposal",
       description:
         "Apaga uma proposta de VERDADE do banco (nao so esconde) - use quando o usuario pedir pra tirar/remover/apagar uma proposta da tela (ex: uma antiga presa em 'precisa de mais dados', ou uma duplicada). SEMPRE confirme com o usuario antes de chamar, igual as outras acoes. So falha se a proposta ja tiver sido executada (sucesso ou falha) - nesse caso e historico real, nao pode ser apagado; explique isso ao usuario em vez de insistir.",
@@ -482,14 +481,14 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
  * de uma marca especifica, mais as tools de decisao/execucao (so existem aqui) -
  * usadas pelo chat por usuario. */
 /** Descricoes que fazem sentido pro scheduler (TOOL_DEFS) mas ficam erradas/enganosas
- * no chat, onde a JAMILE ganha ferramentas de decisao/execucao que nao existem la -
- * "propose_action" descrita como "a UNICA acao possivel" contradizia diretamente o
- * resto do prompt e contribuia pra ela parar de proposito depois de criar a proposta,
- * mesmo quando o usuario pediu a acao diretamente. So sobrescreve aqui, TOOL_DEFS
- * (scheduler) mantem a descricao original, que la continua certa. */
+ * no chat, onde a JAMILE ganha ferramentas de decisao/execucao que nao existem la.
+ * "propose_action" no scheduler e "a UNICA acao possivel" (verdade la); no chat isso
+ * e falso - existe confirm_and_execute_action pra quando o pedido ja foi confirmado.
+ * So sobrescreve aqui, TOOL_DEFS (scheduler) mantem a descricao original, que la
+ * continua certa. */
 const CHAT_TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
   propose_action:
-    "Cria uma proposta de acao (mantem o registro/auditoria do sistema) - e o PRIMEIRO passo, nao o unico. Se o usuario pediu essa acao diretamente (nao foi so voce sugerindo por conta propria), depois de criar a proposta continue o ciclo: confirme a acao exata com o usuario, depois chame decide_proposal e execute_proposal na mesma proposta - nao pare so nesta chamada.",
+    "Registra uma sugestao de acao SUA, por iniciativa propria, ainda SEM confirmacao do usuario - use so quando voce mesma notou uma oportunidade e quer perguntar antes de agir. Se o usuario ja pediu a acao diretamente, ou ja confirmou uma sugestao sua nesta mesma troca de mensagens, NAO use isto - use confirm_and_execute_action, que cria e ja executa numa chamada so, sem deixar proposta solta.",
 };
 
 export const TOOL_DEFS_CHAT: ChatCompletionTool[] = [
@@ -565,22 +564,22 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
-        return await proposeAction({ brandId: args.brandId, threadId: ctx.threadId }, args);
+        return await proposeAction({ brandId: args.brandId, threadId: ctx.threadId, userId: ctx.userId }, args);
+      }
+      case "confirm_and_execute_action": {
+        const args = confirmAndExecuteActionChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        return await confirmAndExecuteAction(ctx.userId, { brandId: args.brandId, threadId: ctx.threadId }, args);
       }
       case "get_proposal": {
         const args = getProposalChatArgsSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
         return await getProposal(args.brandId, args.proposalId);
       }
-      case "decide_proposal": {
-        const args = decideProposalChatArgsSchema.parse(parsedJson);
+      case "resolve_proposal": {
+        const args = resolveProposalChatArgsSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
-        const targetStatus = { approve: "APPROVED", reject: "REJECTED", test: "TEST" }[args.decision] as
-          | "APPROVED"
-          | "REJECTED"
-          | "TEST";
-        const proposal = await decideProposalAsUser(ctx.userId, args.proposalId, targetStatus, args.note ?? null);
-        return { proposalId: proposal.id, status: proposal.status };
+        return await resolveProposal(ctx.userId, args.proposalId, args.decision, args.note ?? null);
       }
       case "adjust_proposal": {
         const args = adjustProposalChatArgsSchema.parse(parsedJson);
@@ -592,12 +591,6 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
           args.note
         );
         return { proposalId: proposal.id, status: proposal.status };
-      }
-      case "execute_proposal": {
-        const args = executeProposalChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        const executionLog = await executeProposal(args.proposalId, ctx.userId);
-        return { proposalId: args.proposalId, executionStatus: executionLog.status, errorMessage: executionLog.errorMessage };
       }
       case "delete_proposal": {
         const args = deleteProposalChatArgsSchema.parse(parsedJson);

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getAttentionItems } from "@/lib/notifications";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { JamileProvider } from "@/components/jamile-launcher";
@@ -15,18 +16,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/change-password");
   }
 
-  const [brands, pendingProposalsCount] = await Promise.all([
+  const [brands, notifications] = await Promise.all([
     prisma.brand.findMany({
       where: { brandAccess: { some: { userId: session.user.id } } },
       orderBy: { priorityOrder: "asc" },
       select: { id: true, slug: true, name: true, status: true },
     }),
-    prisma.proposal.count({
-      where: {
-        status: { in: ["PENDING", "NEEDS_MORE_DATA"] },
-        brand: { brandAccess: { some: { userId: session.user.id } } },
-      },
-    }),
+    getAttentionItems(session.user.id),
   ]);
 
   async function handleSignOut() {
@@ -45,10 +41,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           brands={brands}
           userEmail={session.user.email!}
           isAdmin={session.user.role === "ADMIN"}
-          pendingProposalsCount={pendingProposalsCount}
+          pendingProposalsCount={notifications.length}
         />
         <SidebarInset>
-          <AppHeader brands={brands} userEmail={session.user.email!} onSignOut={handleSignOut} />
+          <AppHeader
+            brands={brands}
+            userEmail={session.user.email!}
+            onSignOut={handleSignOut}
+            notifications={notifications}
+          />
           <main className="flex flex-1 flex-col gap-6 p-6">{children}</main>
         </SidebarInset>
       </JamileProvider>

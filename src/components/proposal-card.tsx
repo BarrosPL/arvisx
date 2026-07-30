@@ -165,9 +165,9 @@ export interface ProposalBrandView {
 /**
  * Card SÓ LEITURA - histórico/auditoria de uma proposta. Aprovar/rejeitar/ajustar/
  * executar não acontece mais por aqui: toda a árvore de decisão passa a acontecer
- * conversando com a JAMILE (decide_proposal/adjust_proposal/execute_proposal, ver
- * lib/agent/tools/index.ts) - decisão do Renan, ver plano "JAMILE conduz tudo pelo
- * chat". Anexar a imagem de uma NEW_CAMPAIGN também migrou pro chat
+ * conversando com a JAMILE (confirm_and_execute_action/resolve_proposal/
+ * adjust_proposal, ver lib/agent/tools/index.ts) - decisão do Renan, ver plano
+ * "JAMILE conduz tudo pelo chat". Anexar a imagem de uma NEW_CAMPAIGN também migrou pro chat
  * (ChatCreativeAssetUpload em chat-panel.tsx).
  */
 export function ProposalCard({ proposal, brand }: { proposal: ProposalView; brand?: ProposalBrandView }) {

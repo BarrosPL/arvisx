@@ -22,18 +22,24 @@ export function AttentionItem({
   title,
   description,
   prefill,
+  onClick,
 }: {
   tone: StatusTone;
   title: string;
   description?: string;
   prefill: string;
+  /** Chamado junto do clique, antes de abrir o chat - ex: fechar um popover que contém este item. */
+  onClick?: () => void;
 }) {
   const { openChat } = useJamileChat();
   const Icon = TONE_ICON[tone];
   return (
     <button
       type="button"
-      onClick={() => openChat({ prefill })}
+      onClick={() => {
+        onClick?.();
+        openChat({ prefill });
+      }}
       className="flex w-full items-start gap-3 rounded-lg border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:border-foreground/20"
     >
       <Icon className={cn("mt-0.5 size-4 shrink-0", TONE_ICON_CLASSNAME[tone])} />

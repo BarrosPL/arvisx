@@ -233,20 +233,22 @@ export type GetProposalChatArgs = z.infer<typeof getProposalChatArgsSchema>;
 
 export const decideProposalDecisionSchema = z.enum(["approve", "reject", "test"]);
 
-const decideProposalChatObjectSchema = z.object({
+const resolveProposalChatObjectSchema = z.object({
   brandId: z.string(),
   proposalId: z.string(),
   decision: decideProposalDecisionSchema,
   note: z.string().min(1).optional(),
 });
 
-/** "reject" exige nota (mesma regra ja aplicada hoje na rota REST /api/proposals/[id]/reject). */
-export const decideProposalChatArgsSchema = decideProposalChatObjectSchema.refine(
+/** "reject" exige nota (mesma regra ja aplicada hoje na rota REST /api/proposals/[id]/reject).
+ * approve/test decidem E executam numa chamada so - substitui decide_proposal + execute_proposal
+ * como 2 chamadas separadas (ver src/lib/proposals/chatActions.ts::resolveProposal). */
+export const resolveProposalChatArgsSchema = resolveProposalChatObjectSchema.refine(
   (args) => args.decision !== "reject" || (args.note && args.note.trim().length > 0),
   { message: "decision=reject exige note", path: ["note"] }
 );
 
-export type DecideProposalChatArgs = z.infer<typeof decideProposalChatArgsSchema>;
+export type ResolveProposalChatArgs = z.infer<typeof resolveProposalChatArgsSchema>;
 
 export const adjustProposalChatArgsSchema = z.object({
   brandId: z.string(),
@@ -259,12 +261,12 @@ export const adjustProposalChatArgsSchema = z.object({
 
 export type AdjustProposalChatArgs = z.infer<typeof adjustProposalChatArgsSchema>;
 
-export const executeProposalChatArgsSchema = z.object({
-  brandId: z.string(),
-  proposalId: z.string(),
-});
+/** Mesmo formato de payload de propose_action - cria a proposta E ja aprova+executa numa
+ * chamada so, pra uma acao nova que o usuario acabou de confirmar (ver
+ * src/lib/proposals/chatActions.ts::confirmAndExecuteAction). */
+export const confirmAndExecuteActionChatArgsSchema = proposalPayloadChatSchema;
 
-export type ExecuteProposalChatArgs = z.infer<typeof executeProposalChatArgsSchema>;
+export type ConfirmAndExecuteActionChatArgs = z.infer<typeof confirmAndExecuteActionChatArgsSchema>;
 
 export const deleteProposalChatArgsSchema = z.object({
   brandId: z.string(),
