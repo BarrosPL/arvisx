@@ -9,7 +9,7 @@ import { fetchGoogleAdLibrary } from "@/lib/ads/googleLibrary";
 import { computeAndSaveRanking } from "@/lib/ranking/compute";
 import type { RecommendedAction } from "@/lib/ranking/verdict";
 import { evaluateProposalReadiness, deriveInitialStatus } from "@/lib/proposals/dataEnforcement";
-import { runAutonomousBudgetProposal } from "@/lib/agent/autonomous";
+import { runAutonomousBudgetProposal, runAutonomousNewCampaignScan } from "@/lib/agent/autonomous";
 
 const OPEN_PROPOSAL_STATUSES: ProposalStatus[] = ["PENDING", "NEEDS_MORE_DATA", "TEST", "ADJUST"];
 
@@ -30,6 +30,17 @@ async function hasOpenDuplicate(brandId: string, type: ProposalType, key: string
       status: { in: OPEN_PROPOSAL_STATUSES },
       OR: [{ platformAdId: key }, { platformCampaignId: key }],
     },
+    select: { id: true },
+  });
+  return existing !== null;
+}
+
+/** NEW_CAMPAIGN nao tem um anuncio/campanha existente pra chavear o dedup (e uma
+ * campanha que ainda nao existe) - o dedup aqui e por marca: no maximo 1 sugestao de
+ * campanha nova aberta por vez, senao a cada rodada de 6h ela empilharia sugestoes. */
+async function hasOpenNewCampaignProposal(brandId: string): Promise<boolean> {
+  const existing = await prisma.proposal.findFirst({
+    where: { brandId, type: "NEW_CAMPAIGN", status: { in: OPEN_PROPOSAL_STATUSES } },
     select: { id: true },
   });
   return existing !== null;
@@ -138,6 +149,22 @@ async function runBrandRound(
       if (result.outcome === "proposal_created") {
         createdCount += 1;
         lastCreatedId = result.proposalId;
+      } else {
+        skippedCount += 1;
+      }
+    }
+
+    // Diferente do loop acima (uma decisao por anuncio/campanha ja existente), isto e
+    // uma decisao no nivel da MARCA - roda so 1x por rodada, nao por acao recomendada.
+    // Pedido do Renan: quando achar oportunidade de campanha nova, sugerir no dashboard.
+    if (!(await hasOpenNewCampaignProposal(brand.id))) {
+      const { proposalCreated, proposalId: newCampaignProposalId } = await runAutonomousNewCampaignScan(
+        brand,
+        snapshot.verdict
+      );
+      if (proposalCreated) {
+        createdCount += 1;
+        lastCreatedId = newCampaignProposalId;
       } else {
         skippedCount += 1;
       }
