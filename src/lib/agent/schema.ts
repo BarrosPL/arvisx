@@ -129,6 +129,14 @@ export const getAdSetsArgsSchema = z.object({
 
 export type GetAdSetsArgs = z.infer<typeof getAdSetsArgsSchema>;
 
+export const getCampaignsArgsSchema = z.object({
+  platform: platformSchema.optional(),
+  /** Só campanhas veiculando agora - o padrão é trazer todas (ativas e pausadas). */
+  onlyActive: z.boolean().optional(),
+});
+
+export type GetCampaignsArgs = z.infer<typeof getCampaignsArgsSchema>;
+
 export const researchStubArgsSchema = z.object({
   query: z.string().min(1),
 });
@@ -188,6 +196,12 @@ export const getAdSetsChatArgsSchema = getAdSetsArgsSchema.extend({
 });
 
 export type GetAdSetsChatArgs = z.infer<typeof getAdSetsChatArgsSchema>;
+
+export const getCampaignsChatArgsSchema = getCampaignsArgsSchema.extend({
+  brandId: z.string(),
+});
+
+export type GetCampaignsChatArgs = z.infer<typeof getCampaignsChatArgsSchema>;
 
 export const getMetricsHistoryChatArgsSchema = getMetricsHistoryArgsSchema.extend({
   brandId: z.string(),

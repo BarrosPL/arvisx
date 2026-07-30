@@ -178,17 +178,18 @@ model Brand {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  brandAccess      BrandAccess[]
-  credentials      AdCredential[]
-  metricSnapshots  AdMetricSnapshot[]
-  rankingSnapshots RankingSnapshot[]
-  messages         Message[]
-  proposals        Proposal[]
-  executionLogs    ExecutionLog[]
-  schedulerResults SchedulerBrandResult[]
-  firewallLogs     FirewallLog[]
-  abTests          AbTest[]
-  adCreatives      AdCreative[]
+  brandAccess             BrandAccess[]
+  credentials             AdCredential[]
+  metricSnapshots         AdMetricSnapshot[]
+  campaignMetricSnapshots CampaignMetricSnapshot[]
+  rankingSnapshots        RankingSnapshot[]
+  messages                Message[]
+  proposals               Proposal[]
+  executionLogs           ExecutionLog[]
+  schedulerResults        SchedulerBrandResult[]
+  firewallLogs            FirewallLog[]
+  abTests                 AbTest[]
+  adCreatives             AdCreative[]
 
   @@schema("arvisx")
 }
@@ -238,10 +239,11 @@ model AdCredential {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  brand              Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  providerConnection ProviderConnection @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
-  metricSnapshots    AdMetricSnapshot[]
-  adCreatives        AdCreative[]
+  brand                   Brand                    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  providerConnection      ProviderConnection       @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
+  metricSnapshots         AdMetricSnapshot[]
+  campaignMetricSnapshots CampaignMetricSnapshot[]
+  adCreatives             AdCreative[]
 
   @@unique([platform, externalAccountId])
   @@schema("arvisx")
@@ -322,6 +324,75 @@ model AdMetricSnapshot {
 
   @@index([brandId, platform, collectedAt])
   @@index([brandId, platformAdId])
+  @@schema("arvisx")
+}
+
+/**
+ * Metrica no nivel de CAMPANHA - tabela separada de AdMetricSnapshot de proposito, nao
+ * uma coluna "level" nela: existem 4 lugares que fazem
+ * `distinct: ["credentialId", "platformAdId"]` (ranking/compute.ts, dashboard/page.tsx,
+ * credentials/page.tsx, agent/tools/getMetrics.ts) e todos quebrariam silenciosamente
+ * se linha de campanha entrasse na mesma tabela.
+ * Duas coisas so existem aqui, nunca no nivel de anuncio:
+ * 1. "reach" CORRETO - alcance e gente unica; somar o alcance dos anuncios de uma
+ * campanha conta a mesma pessoa varias vezes. A Meta deduplica no servidor quando a
+ * consulta e feita em level=campaign, entao esse e o unico numero de alcance de
+ * campanha confiavel.
+ * 2. "campaignStatus" - status da propria campanha (ativa/pausada). Antes disso o
+ * sistema so conhecia status de ANUNCIO, e campanha pausada com anuncio ativo dentro
+ * apareceria como ativa por engano.
+ * Assim como AdMetricSnapshot, acumula historico (nunca apaga) - quem le pega so a
+ * coleta mais recente por (credentialId, platformCampaignId).
+ */
+model CampaignMetricSnapshot {
+  id                 String          @id @default(cuid())
+  brandId            String
+  credentialId       String
+  platform           Platform
+  platformCampaignId String?
+  campaignName       String?
+  /**
+   * Status da propria campanha na plataforma (ACTIVE/PAUSED/ENABLED...).
+   */
+  campaignStatus     String?
+  /**
+   * Objetivo da campanha (ex: OUTCOME_LEADS) - e o que decide qual acao conta como
+   * "Resultado", pra bater com a coluna do Gerenciador de Anuncios.
+   */
+  objective          String?
+  collectionState    CollectionState
+  dateRangeStart     DateTime
+  dateRangeEnd       DateTime
+  spend              Decimal         @default(0) @db.Decimal(12, 2)
+  impressions        Int             @default(0)
+  clicks             Int             @default(0)
+  ctr                Decimal         @default(0) @db.Decimal(7, 4) // percentual
+  cpc                Decimal         @default(0) @db.Decimal(10, 2)
+  /**
+   * Quantidade de resultados, ja resolvida pelo objetivo (ver lib/ads/resultMetric.ts).
+   */
+  results            Int             @default(0)
+  /**
+   * Qual tipo de acao foi contado como resultado (ex: "lead", "link_click") - guardado
+   * pra dar pra auditar de onde veio o numero em vez de so um total sem contexto.
+   */
+  resultType         String?
+  /**
+   * Custo por resultado.
+   */
+  cpr                Decimal?        @db.Decimal(10, 2)
+  reach              Int?
+  frequency          Decimal?        @db.Decimal(6, 2)
+  cpm                Decimal?        @db.Decimal(10, 2)
+  raw                Json?
+  errorMessage       String?
+  collectedAt        DateTime        @default(now())
+
+  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, platform, collectedAt])
+  @@index([brandId, platformCampaignId])
   @@schema("arvisx")
 }
 

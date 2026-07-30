@@ -22,3 +22,22 @@ export function formatDate(date: Date, options?: Intl.DateTimeFormatOptions): st
 export function formatTime(date: Date, options?: Intl.DateTimeFormatOptions): string {
   return date.toLocaleTimeString("pt-BR", { timeZone: TIMEZONE, ...options });
 }
+
+/** Numero inteiro com separador de milhar (impressoes, alcance, resultados). */
+export function formatNumber(value: number): string {
+  return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}
+
+/** "há 3 min" / "agora" - usado pra deixar explicito na tela quao fresco e o dado
+ * mostrado, ja que a coleta e periodica (as plataformas tambem nao entregam numero em
+ * tempo real na origem: os relatorios delas tem atraso proprio). */
+export function formatRelativeTime(date: Date, now: Date = new Date()): string {
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  if (diffMinutes < 1) return "agora";
+  if (diffMinutes < 60) return `há ${diffMinutes} min`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `há ${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `há ${diffDays}d`;
+}

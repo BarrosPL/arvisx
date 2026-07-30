@@ -1,9 +1,30 @@
-const DEFAULT_INTERVAL_MINUTES = 360;
-const FIRST_RUN_DELAY_MS = 30_000;
+/**
+ * Dois ciclos independentes, de proposito:
+ *
+ * 1. COLETA (padrao 15min) - so busca metrica de campanha nas plataformas e grava.
+ *    Barato: zero IA, zero proposta. E o que mantem o dashboard com dado fresco.
+ * 2. ANALISE (padrao 6h) - a rodada proativa completa: coleta por anuncio, ranking,
+ *    propostas e as chamadas de IA. Cara, entao continua rara.
+ *
+ * Antes existia um ciclo unico de 6h fazendo as duas coisas. Encurtar aquele intervalo
+ * pra ter dado fresco teria multiplicado o custo de OpenAI e a criacao de propostas por
+ * 24 - separar foi o que permitiu dado a cada 15min sem esse efeito colateral.
+ */
+const DEFAULT_ANALYSIS_INTERVAL_MINUTES = 360;
+const DEFAULT_COLLECT_INTERVAL_MINUTES = 15;
+const FIRST_COLLECT_DELAY_MS = 15_000;
+const FIRST_ANALYSIS_DELAY_MS = 60_000;
 
 const globalForScheduler = globalThis as unknown as {
   proactiveSchedulerStarted?: boolean;
 };
+
+/** Number("") e Number(undefined) dao 0/NaN e cairiam no default - mas Number("0") da 0
+ * e tambem cai, o que e o comportamento desejado aqui (0 nao e intervalo valido). */
+function intervalFromEnv(raw: string | undefined, fallbackMinutes: number): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMinutes;
+}
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
@@ -14,13 +35,36 @@ export async function register() {
   }
   globalForScheduler.proactiveSchedulerStarted = true;
 
-  const intervalMinutes = Number(process.env.SCHEDULER_INTERVAL_MINUTES) || DEFAULT_INTERVAL_MINUTES;
-  const intervalMs = intervalMinutes * 60 * 1000;
+  const analysisMinutes = intervalFromEnv(
+    process.env.SCHEDULER_INTERVAL_MINUTES,
+    DEFAULT_ANALYSIS_INTERVAL_MINUTES
+  );
+  const collectMinutes = intervalFromEnv(
+    process.env.COLLECT_INTERVAL_MINUTES,
+    DEFAULT_COLLECT_INTERVAL_MINUTES
+  );
 
   const { runProactiveRound } = await import("@/lib/scheduler/proactiveRound");
   const { checkRunningAbTests } = await import("@/lib/scheduler/abTestCheck");
+  const { runCollectRound } = await import("@/lib/scheduler/collectRound");
 
-  async function tick() {
+  async function collectTick() {
+    try {
+      const result = await runCollectRound();
+      if (result.skipped) {
+        console.log("[coleta] pulada - a anterior ainda estava rodando");
+        return;
+      }
+      console.log(
+        `[coleta] ${result.brands} marca(s), ${result.credentials} conta(s)` +
+          (result.errors > 0 ? `, ${result.errors} com erro` : "")
+      );
+    } catch (error) {
+      console.error("[coleta] falhou:", error);
+    }
+  }
+
+  async function analysisTick() {
     try {
       const { checked, completed } = await checkRunningAbTests();
       if (checked > 0) {
@@ -38,10 +82,19 @@ export async function register() {
     }
   }
 
+  // A coleta comeca antes da analise de proposito - assim a primeira tela ja tem dado
+  // fresco sem esperar a rodada cara terminar.
   setTimeout(() => {
-    tick();
-    setInterval(tick, intervalMs);
-  }, FIRST_RUN_DELAY_MS);
+    collectTick();
+    setInterval(collectTick, collectMinutes * 60 * 1000);
+  }, FIRST_COLLECT_DELAY_MS);
 
-  console.log(`[scheduler] agendado - primeira rodada em ${FIRST_RUN_DELAY_MS / 1000}s, depois a cada ${intervalMinutes}min`);
+  setTimeout(() => {
+    analysisTick();
+    setInterval(analysisTick, analysisMinutes * 60 * 1000);
+  }, FIRST_ANALYSIS_DELAY_MS);
+
+  console.log(
+    `[scheduler] agendado - coleta a cada ${collectMinutes}min (sem IA), análise a cada ${analysisMinutes}min`
+  );
 }

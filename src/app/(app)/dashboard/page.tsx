@@ -1,38 +1,31 @@
-import { Building2, Clock, Inbox, Sparkles, Wallet } from "lucide-react";
+import { Clock, Inbox, Megaphone, Sparkles, Target, Wallet } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OnboardingGate } from "@/components/onboarding-gate";
 import { isMetaOAuthConfigured, getMetaRedirectUri } from "@/lib/oauth/meta";
 import { isGoogleOAuthConfigured, getGoogleRedirectUri } from "@/lib/oauth/google";
-import { LiveCampaignsView } from "@/components/live-campaigns-view";
+import { ActiveCampaignsTable, type ActiveCampaignRow } from "@/components/active-campaigns-table";
 import { RunAnalysisButton } from "@/components/run-analysis-button";
+import { RefreshDataButton } from "@/components/refresh-data-button";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
-import { formatCurrency, formatDateTime, formatTime } from "@/lib/format";
+import { formatCurrency, formatDateTime, formatNumber, formatRelativeTime } from "@/lib/format";
 import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
-import { getLiveAccountStructure } from "@/lib/ads/liveSnapshot";
 
-/** Frase narrada pelo topo do resumo da JAMILE - reorganizacao de apresentacao dos
- * mesmos dados ja calculados (verdict por marca), nao uma agregacao nova. */
-function buildNarrativeSummary(
-  verdicts: Array<"BOM" | "MEDIO" | "RUIM" | null>,
-  totalSpend: number
-): string {
-  const counts = { bom: 0, medio: 0, ruim: 0, semDados: 0 };
-  for (const verdict of verdicts) {
-    if (verdict === "BOM") counts.bom++;
-    else if (verdict === "MEDIO") counts.medio++;
-    else if (verdict === "RUIM") counts.ruim++;
-    else counts.semDados++;
+const ACTIVE_STATUSES = new Set(["ACTIVE", "ENABLED"]);
+
+/** Frase narrada pelo topo do resumo da JAMILE - apresentacao dos mesmos numeros ja
+ * calculados, nao uma agregacao nova. */
+function buildNarrativeSummary(activeCount: number, totalSpend: number, totalResults: number): string {
+  if (activeCount === 0) {
+    return "Nenhuma campanha veiculando no momento nas contas conectadas.";
   }
-  const parts: string[] = [];
-  if (counts.bom > 0) parts.push(`${counts.bom} indo bem`);
-  if (counts.medio > 0) parts.push(`${counts.medio} estável(is)`);
-  if (counts.ruim > 0) parts.push(`${counts.ruim} precisando de atenção`);
-  if (counts.semDados > 0) parts.push(`${counts.semDados} sem dado suficiente ainda`);
-  const statusSentence = parts.length > 0 ? parts.join(", ") : "nenhuma com dado suficiente ainda";
-  return `Analisei suas ${verdicts.length} marca(s): ${statusSentence}. Investimento total: ${formatCurrency(totalSpend)}.`;
+  const resultPart =
+    totalResults > 0
+      ? `${formatNumber(totalResults)} resultado(s)`
+      : "nenhum resultado registrado ainda";
+  return `Você tem ${activeCount} campanha(s) ativa(s), com ${formatCurrency(totalSpend)} investido(s) e ${resultPart} nos últimos 7 dias.`;
 }
 
 export default async function DashboardPage() {
@@ -54,79 +47,88 @@ export default async function DashboardPage() {
     );
   }
 
-  const [brands, latestRun, spendByBrand] = await Promise.all([
+  const [brands, latestRun, campaignSnapshots] = await Promise.all([
     prisma.brand.findMany({
       where: { brandAccess: { some: { userId } } },
       orderBy: { priorityOrder: "asc" },
-      include: {
-        rankingSnapshots: { orderBy: { computedAt: "desc" }, take: 1 },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
         // So conta proposta de rodada pro-ativa (createdByUserId null) - pedido direto
-        // no chat executa na hora e nunca fica "aguardando decisão" aqui (ver
+        // no chat executa na hora e nunca fica "aguardando decisão" (ver
         // lib/notifications.ts, mesmo filtro usado pelo sino de notificação).
         proposals: {
-          where: {
-            createdByUserId: null,
-            status: { in: OPEN_PROPOSAL_STATUSES },
-          },
+          where: { createdByUserId: null, status: { in: OPEN_PROPOSAL_STATUSES } },
           select: { id: true },
         },
-        credentials: { select: { id: true } },
       },
     }),
     prisma.schedulerRun.findFirst({
       orderBy: { startedAt: "desc" },
-      include: { brandResults: { include: { brand: { select: { id: true, name: true, slug: true } } } } },
+      include: { brandResults: true },
     }),
-    // groupBy+_sum somaria toda a serie historica (AdMetricSnapshot acumula uma linha
-    // por coleta desde que paramos de apagar - lib/ads/collect.ts). Por isso busca so
-    // a coleta mais recente por (credencial, anuncio) e soma em memoria, igual ao
-    // mesmo padrao ja usado em lib/ranking/compute.ts e agent/tools/getMetrics.ts.
-    prisma.adMetricSnapshot.findMany({
-      where: { collectionState: "OK" },
+    // Mesma dedupe ja usada em todo lugar que le snapshot (orderBy collectedAt desc +
+    // distinct): so a coleta MAIS RECENTE de cada campanha, ja que a tabela acumula
+    // historico. Alimentada pelo ciclo de coleta de 15min - nunca consulta a API aqui.
+    prisma.campaignMetricSnapshot.findMany({
+      where: {
+        collectionState: "OK",
+        brand: { brandAccess: { some: { userId } } },
+      },
       orderBy: { collectedAt: "desc" },
-      distinct: ["credentialId", "platformAdId"],
-      select: { brandId: true, spend: true },
+      distinct: ["credentialId", "platformCampaignId"],
     }),
   ]);
 
-  const spendByBrandId = new Map<string, number>();
-  for (const snapshot of spendByBrand) {
-    spendByBrandId.set(snapshot.brandId, (spendByBrandId.get(snapshot.brandId) ?? 0) + Number(snapshot.spend));
-  }
+  const brandById = new Map(brands.map((brand) => [brand.id, brand]));
+
+  const activeRows: ActiveCampaignRow[] = campaignSnapshots
+    .filter((snapshot) => snapshot.platformCampaignId && ACTIVE_STATUSES.has((snapshot.campaignStatus ?? "").toUpperCase()))
+    .map((snapshot) => {
+      const brand = brandById.get(snapshot.brandId);
+      return {
+        key: snapshot.id,
+        brandName: brand?.name ?? "—",
+        brandSlug: brand?.slug ?? "",
+        platform: snapshot.platform,
+        campaignName: snapshot.campaignName ?? "Campanha sem nome",
+        campaignStatus: snapshot.campaignStatus,
+        results: snapshot.results,
+        resultType: snapshot.resultType,
+        cpr: snapshot.cpr !== null ? Number(snapshot.cpr) : null,
+        spend: Number(snapshot.spend),
+        impressions: snapshot.impressions,
+        reach: snapshot.reach,
+        cpm: snapshot.cpm !== null ? Number(snapshot.cpm) : null,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
+
+  // Somas só sobre o que É somável. CPR do topo é recalculado do total (soma do gasto
+  // ÷ soma dos resultados), nunca a média dos CPRs - média de média dá número errado.
+  const totalSpend = activeRows.reduce((sum, row) => sum + row.spend, 0);
+  const totalResults = activeRows.reduce((sum, row) => sum + row.results, 0);
+  const averageCpr = totalResults > 0 ? totalSpend / totalResults : null;
+
+  const lastCollectedAt = campaignSnapshots.reduce<Date | null>(
+    (latest, snapshot) => (latest === null || snapshot.collectedAt > latest ? snapshot.collectedAt : latest),
+    null
+  );
 
   const openProposalsCount = brands.reduce((sum, brand) => sum + brand.proposals.length, 0);
-
-  // So busca ao vivo (Meta/Google, fora do Postgres) pra marca que realmente tem
-  // conta conectada - getLiveAccountStructure([]) resolve na hora pras outras, sem
-  // chamada nenhuma. Cacheado por credencial (60s) dentro de liveSnapshot.ts.
-  const liveBrands = await Promise.all(
-    brands
-      .filter((brand) => brand.credentials.length > 0)
-      .map(async (brand) => ({
-        id: brand.id,
-        name: brand.name,
-        slug: brand.slug,
-        snapshots: await getLiveAccountStructure(brand.id),
-      }))
-  );
 
   const runSummary = latestRun
     ? (() => {
         const created = latestRun.brandResults.filter((r) => r.outcome === "proposal_created").length;
         const noAction = latestRun.brandResults.filter((r) => r.outcome === "no_action").length;
         const errors = latestRun.brandResults.filter((r) => r.outcome === "error").length;
-        return { startedAt: latestRun.startedAt, created, noAction, errors, status: latestRun.status };
+        return { startedAt: latestRun.startedAt, created, noAction, errors };
       })()
     : null;
 
-  const totalSpend = Array.from(spendByBrandId.values()).reduce((sum, value) => sum + value, 0);
-  const activeBrandsCount = brands.filter((brand) => brand.status === "ACTIVE").length;
-
   const greetingName = session!.user.name ?? session!.user.email?.split("@")[0] ?? "";
-  const narrativeSummary = buildNarrativeSummary(
-    brands.map((brand) => brand.rankingSnapshots[0]?.verdict ?? null),
-    totalSpend
-  );
+  const narrativeSummary = buildNarrativeSummary(activeRows.length, totalSpend, totalResults);
 
   return (
     <div className="flex flex-col gap-6">
@@ -151,23 +153,19 @@ export default async function DashboardPage() {
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Campanhas ativas" value={activeRows.length} icon={Megaphone} />
         <StatCard
-          label="Marcas ativas"
-          value={activeBrandsCount}
-          icon={Building2}
-          context={`de ${brands.length} marca(s) no total`}
+          label="Investimento"
+          value={formatCurrency(totalSpend)}
+          icon={Wallet}
+          context="últimos 7 dias"
         />
+        <StatCard label="Resultados" value={formatNumber(totalResults)} icon={Target} context="últimos 7 dias" />
         <StatCard
-          label="Propostas pendentes"
-          value={openProposalsCount}
+          label="CPR médio"
+          value={averageCpr !== null ? formatCurrency(averageCpr) : "—"}
           icon={Inbox}
-          tone={openProposalsCount > 0 ? "warning" : "default"}
-        />
-        <StatCard label="Investimento total" value={formatCurrency(totalSpend)} icon={Wallet} />
-        <StatCard
-          label="Última análise"
-          value={runSummary ? formatTime(runSummary.startedAt, { hour: "2-digit", minute: "2-digit" }) : "—"}
-          icon={Clock}
+          context={openProposalsCount > 0 ? `${openProposalsCount} proposta(s) pendente(s)` : undefined}
         />
       </div>
 
@@ -182,8 +180,19 @@ export default async function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Rodando agora (ao vivo)</h2>
-        <LiveCampaignsView brands={liveBrands} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Campanhas ativas ({activeRows.length})
+          </h2>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="size-3" />
+            <span>
+              {lastCollectedAt ? `Atualizado ${formatRelativeTime(lastCollectedAt)}` : "Ainda não coletado"}
+            </span>
+            <RefreshDataButton />
+          </div>
+        </div>
+        <ActiveCampaignsTable rows={activeRows} />
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_metrics: "Consultou métricas de anúncios",
   get_metrics_history: "Consultou histórico de métricas",
   get_ad_sets: "Agrupou anúncios por conjunto de anúncios",
+  get_campaigns: "Consultou as campanhas",
   get_ad_budget: "Consultou a verba atual",
   get_ad_library: "Consultou a biblioteca de anúncios da conta",
   search_public_ad_library: "Pesquisou a biblioteca pública de anúncios",

@@ -4,6 +4,7 @@ import {
   getMetricsArgsSchema,
   getMetricsHistoryArgsSchema,
   getAdSetsArgsSchema,
+  getCampaignsArgsSchema,
   getAdBudgetArgsSchema,
   getAdLibraryArgsSchema,
   searchPublicAdLibraryArgsSchema,
@@ -12,6 +13,7 @@ import {
   getMetricsChatArgsSchema,
   getMetricsHistoryChatArgsSchema,
   getAdSetsChatArgsSchema,
+  getCampaignsChatArgsSchema,
   getAdBudgetChatArgsSchema,
   getAdLibraryChatArgsSchema,
   searchPublicAdLibraryChatArgsSchema,
@@ -26,6 +28,7 @@ import { getRanking } from "./getRanking";
 import { getMetrics } from "./getMetrics";
 import { getMetricsHistory } from "./getMetricsHistory";
 import { getAdSets } from "./getAdSets";
+import { getCampaigns } from "./getCampaigns";
 import { getAdBudget } from "./getAdBudget";
 import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
@@ -218,6 +221,22 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_campaigns",
+      description:
+        "Le as metricas no nivel de CAMPANHA (ultimos 7 dias): resultado, custo por resultado (CPR), gasto, impressoes, alcance, CPM e status real de cada campanha. Use SEMPRE que a pergunta for sobre campanha ('como estao minhas campanhas', 'quais campanhas estao ativas', 'qual campanha gasta mais', 'qual o alcance da campanha X') - NUNCA some as linhas de get_metrics pra montar numero de campanha. Dois numeros so estao corretos aqui e nao podem ser calculados a partir de anuncio: (1) alcance, que e gente unica e vem deduplicado pela plataforma - somar o alcance dos anuncios contaria a mesma pessoa varias vezes; (2) resultado/CPR, que aqui ja respeita o OBJETIVO de cada campanha, igual a coluna 'Resultados' do Gerenciador de Anuncios (o campo resultType diz qual acao foi contada). Pra descer pro nivel de conjunto ou anuncio depois, use get_ad_sets/get_metrics.",
+      parameters: {
+        type: "object",
+        properties: {
+          platform: { type: "string", enum: ["META", "GOOGLE"], description: "Filtra por plataforma. Omitir para ambas." },
+          onlyActive: { type: "boolean", description: "So campanhas veiculando agora. Omitir traz ativas e pausadas." },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_ad_budget",
       description:
         "Le a verba diaria REAL de uma campanha/anuncio direto no Meta ou Google Ads (nunca escreve nada). Use antes de propor ADJUST_BUDGET - voce precisa do valor atual pra sugerir um valor novo concreto.",
@@ -327,6 +346,8 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
         return await getMetricsHistory(ctx.brandId, getMetricsHistoryArgsSchema.parse(parsedJson));
       case "get_ad_sets":
         return await getAdSets(ctx.brandId, getAdSetsArgsSchema.parse(parsedJson));
+      case "get_campaigns":
+        return await getCampaigns(ctx.brandId, getCampaignsArgsSchema.parse(parsedJson));
       case "get_ad_budget":
         return await getAdBudget(ctx.brandId, getAdBudgetArgsSchema.parse(parsedJson));
       case "get_ad_library":
@@ -358,6 +379,7 @@ const BRAND_SCOPED_TOOL_NAMES = new Set([
   "get_metrics",
   "get_metrics_history",
   "get_ad_sets",
+  "get_campaigns",
   "get_ad_budget",
   "get_ad_library",
   "search_public_ad_library",
@@ -558,6 +580,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = getAdSetsChatArgsSchema.parse(parsedJson);
         assertBrandAccess(ctx, args.brandId);
         return await getAdSets(args.brandId, args);
+      }
+      case "get_campaigns": {
+        const args = getCampaignsChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        return await getCampaigns(args.brandId, args);
       }
       case "get_ad_budget": {
         const args = getAdBudgetChatArgsSchema.parse(parsedJson);
