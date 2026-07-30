@@ -5,6 +5,7 @@ import { toPlatformCredential } from "@/lib/ads/credentials";
 import type { CampaignPlan } from "@/lib/agent/schema";
 import {
   setMetaAdStatus,
+  setMetaAdSetStatus,
   setMetaCampaignStatus,
   setMetaBudget,
   getMetaBudget,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/ads/metaWrite";
 import {
   setGoogleAdStatus,
+  setGoogleAdGroupStatus,
   setGoogleCampaignStatus,
   setGoogleCampaignBudget,
   getGoogleCampaignBudget,
@@ -79,62 +81,89 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
   if (proposal.type === "PAUSE_AD" || proposal.type === "ACTIVATE_AD") {
     const wantActive = proposal.type === "ACTIVATE_AD";
 
-    // Nivel de anuncio (platformAdId preenchido) e o caso mais comum. Sem
-    // platformAdId, mas com platformCampaignId, e um pedido pra pausar/ativar a
-    // CAMPANHA inteira (nao um anuncio especifico dentro dela) - a proposta sempre
-    // tem um dos dois porque dataEnforcement.ts exige campaignId OU adId real.
-    if (!proposal.platformAdId) {
-      if (!proposal.platformCampaignId) {
-        throw new Error("Proposta sem platformAdId nem platformCampaignId");
-      }
-
+    // 3 niveis possiveis, do mais especifico pro mais amplo - qual id a proposta tem
+    // preenchido decide o que executa: platformAdId = so aquele anuncio; sem adId mas
+    // com platformAdSetId = o CONJUNTO de anuncios inteiro; sem os dois, so
+    // platformCampaignId = a CAMPANHA inteira. dataEnforcement.ts so exige
+    // campaignId OU adId real pra sair de "precisa de mais dados" - pausar um
+    // conjunto sempre vem com campaignId tambem preenchido (a JAMILE ja tem os dois
+    // de qualquer consulta a get_ad_sets/get_metrics), por isso adSetId e checado
+    // ANTES de campaignId aqui, senao um pedido de conjunto cairia no nivel de
+    // campanha por engano.
+    if (proposal.platformAdId) {
       if (proposal.platform === "META") {
-        const result = await setMetaCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ACTIVE" : "PAUSED");
+        const result = await setMetaAdStatus(credential, proposal.platformAdId, wantActive ? "ACTIVE" : "PAUSED");
         return {
           ok: result.ok,
-          requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ACTIVE" : "PAUSED" },
+          requestJson: { adId: proposal.platformAdId, status: wantActive ? "ACTIVE" : "PAUSED" },
           responseJson: result.raw,
           errorMessage: result.errorMessage,
-          rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", campaignId: proposal.platformCampaignId },
+          rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adId: proposal.platformAdId },
         };
       }
 
-      const result = await setGoogleCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ENABLED" : "PAUSED");
+      if (!proposal.platformAdSetId) {
+        throw new Error("Proposta sem platformAdSetId (adGroupId necessario para o Google Ads)");
+      }
+      const result = await setGoogleAdStatus(
+        credential,
+        proposal.platformAdSetId,
+        proposal.platformAdId,
+        wantActive ? "ENABLED" : "PAUSED"
+      );
       return {
         ok: result.ok,
-        requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ENABLED" : "PAUSED" },
+        requestJson: { adGroupId: proposal.platformAdSetId, adId: proposal.platformAdId, status: wantActive ? "ENABLED" : "PAUSED" },
+        responseJson: result.raw,
+        errorMessage: result.errorMessage,
+        rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adGroupId: proposal.platformAdSetId, adId: proposal.platformAdId },
+      };
+    }
+
+    if (proposal.platformAdSetId) {
+      if (proposal.platform === "META") {
+        const result = await setMetaAdSetStatus(credential, proposal.platformAdSetId, wantActive ? "ACTIVE" : "PAUSED");
+        return {
+          ok: result.ok,
+          requestJson: { adSetId: proposal.platformAdSetId, status: wantActive ? "ACTIVE" : "PAUSED" },
+          responseJson: result.raw,
+          errorMessage: result.errorMessage,
+          rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adSetId: proposal.platformAdSetId },
+        };
+      }
+
+      const result = await setGoogleAdGroupStatus(credential, proposal.platformAdSetId, wantActive ? "ENABLED" : "PAUSED");
+      return {
+        ok: result.ok,
+        requestJson: { adGroupId: proposal.platformAdSetId, status: wantActive ? "ENABLED" : "PAUSED" },
+        responseJson: result.raw,
+        errorMessage: result.errorMessage,
+        rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adGroupId: proposal.platformAdSetId },
+      };
+    }
+
+    if (!proposal.platformCampaignId) {
+      throw new Error("Proposta sem platformAdId, platformAdSetId nem platformCampaignId");
+    }
+
+    if (proposal.platform === "META") {
+      const result = await setMetaCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ACTIVE" : "PAUSED");
+      return {
+        ok: result.ok,
+        requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ACTIVE" : "PAUSED" },
         responseJson: result.raw,
         errorMessage: result.errorMessage,
         rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", campaignId: proposal.platformCampaignId },
       };
     }
 
-    if (proposal.platform === "META") {
-      const result = await setMetaAdStatus(credential, proposal.platformAdId, wantActive ? "ACTIVE" : "PAUSED");
-      return {
-        ok: result.ok,
-        requestJson: { adId: proposal.platformAdId, status: wantActive ? "ACTIVE" : "PAUSED" },
-        responseJson: result.raw,
-        errorMessage: result.errorMessage,
-        rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adId: proposal.platformAdId },
-      };
-    }
-
-    if (!proposal.platformAdSetId) {
-      throw new Error("Proposta sem platformAdSetId (adGroupId necessario para o Google Ads)");
-    }
-    const result = await setGoogleAdStatus(
-      credential,
-      proposal.platformAdSetId,
-      proposal.platformAdId,
-      wantActive ? "ENABLED" : "PAUSED"
-    );
+    const result = await setGoogleCampaignStatus(credential, proposal.platformCampaignId, wantActive ? "ENABLED" : "PAUSED");
     return {
       ok: result.ok,
-      requestJson: { adGroupId: proposal.platformAdSetId, adId: proposal.platformAdId, status: wantActive ? "ENABLED" : "PAUSED" },
+      requestJson: { campaignId: proposal.platformCampaignId, status: wantActive ? "ENABLED" : "PAUSED" },
       responseJson: result.raw,
       errorMessage: result.errorMessage,
-      rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", adGroupId: proposal.platformAdSetId, adId: proposal.platformAdId },
+      rollbackInfoJson: { action: wantActive ? "PAUSE_AD" : "ACTIVATE_AD", campaignId: proposal.platformCampaignId },
     };
   }
 

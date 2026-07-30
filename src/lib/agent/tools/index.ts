@@ -65,16 +65,17 @@ const PROPOSAL_PAYLOAD_PROPERTIES = {
   platformCampaignId: {
     type: ["string", "null"],
     description:
-      "ID real da campanha na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar A CAMPANHA INTEIRA: preencha so este campo (deixe platformAdId de fora) - o sistema pausa a campanha inteira quando so este vem preenchido.",
+      "ID real da campanha na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar A CAMPANHA INTEIRA (nem um anuncio nem um conjunto especifico dela): preencha SO este campo, deixe platformAdId e platformAdSetId de fora.",
   },
   platformAdId: {
     type: ["string", "null"],
     description:
-      "ID real do anuncio na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar um ANUNCIO ESPECIFICO (nao a campanha inteira): preencha este campo com o id real desse anuncio - nunca escolha/invente um anuncio qualquer de dentro de uma campanha so pra preencher isto quando o pedido era sobre a campanha inteira.",
+      "ID real do anuncio na plataforma, se a acao for sobre algo existente. Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar um ANUNCIO ESPECIFICO: preencha este campo com o id real desse anuncio - nunca escolha/invente um anuncio qualquer de dentro de uma campanha/conjunto so pra preencher isto quando o pedido era sobre um nivel mais amplo (campanha ou conjunto inteiro).",
   },
   platformAdSetId: {
     type: ["string", "null"],
-    description: "Obrigatorio quando type=ADJUST_BUDGET no Meta (id do AdSet) - e onde a execucao real vai mudar a verba.",
+    description:
+      "ID real do conjunto de anuncios/AdSet (Meta) ou grupo de anuncios/AdGroup (Google). Obrigatorio quando type=ADJUST_BUDGET no Meta (e onde a verba mora). Pra PAUSE_AD/ACTIVATE_AD quando o usuario pede pra pausar/ativar O CONJUNTO/GRUPO INTEIRO (nao um anuncio especifico dentro dele, nem a campanha toda): preencha este campo (mais platformCampaignId, se souber) e deixe platformAdId de fora.",
   },
   campaignPlan: {
     type: "object",

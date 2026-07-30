@@ -77,6 +77,35 @@ export async function setMetaCampaignStatus(
   }
 }
 
+/**
+ * Pausa ou ativa o CONJUNTO DE ANUNCIOS inteiro (AdSet - nao um anuncio especifico
+ * dentro dele, nem a campanha toda). Mesmo endpoint generico de status do Graph API,
+ * so muda o id do objeto. Usada quando o usuario pede pra pausar/ativar "o conjunto"
+ * em vez de um anuncio ou da campanha inteira - lib/execution/executor.ts decide qual
+ * das 3 (esta, setMetaAdStatus ou setMetaCampaignStatus) chamar com base em qual id a
+ * proposta tem preenchido.
+ */
+export async function setMetaAdSetStatus(
+  credential: PlatformCredential,
+  adSetId: string,
+  status: "ACTIVE" | "PAUSED"
+): Promise<WriteResult> {
+  const url =
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${adSetId}` +
+    `?status=${status}&access_token=${encodeURIComponent(credential.accessToken)}`;
+
+  try {
+    const response = await fetch(url, { method: "POST" });
+    const body = (await response.json()) as MetaApiErrorResponse & { success?: boolean };
+    if (!response.ok || body.error) {
+      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, raw: body };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
 async function fetchBudgetFields(
   credential: PlatformCredential,
   id: string,

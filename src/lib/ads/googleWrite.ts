@@ -113,6 +113,42 @@ export async function setGoogleCampaignStatus(
   }
 }
 
+/**
+ * Pausa ou ativa o GRUPO DE ANUNCIOS inteiro (AdGroup - equivalente ao "conjunto de
+ * anuncios" do Meta) - nao um anuncio especifico dentro dele (isso e setGoogleAdStatus),
+ * nem a campanha inteira (isso e setGoogleCampaignStatus). Usada quando o usuario pede
+ * pra pausar/ativar "o conjunto/grupo" em vez de um anuncio ou da campanha inteira.
+ */
+export async function setGoogleAdGroupStatus(
+  credential: PlatformCredential,
+  adGroupId: string,
+  status: "ENABLED" | "PAUSED"
+): Promise<WriteResult> {
+  try {
+    const customerId = normalizeCustomerId(credential.externalAccountId);
+    const headers = await authHeaders(credential);
+    const resourceName = `customers/${customerId}/adGroups/${adGroupId}`;
+
+    const response = await fetch(
+      `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/adGroups:mutate`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          operations: [{ update: { resourceName, status }, updateMask: "status" }],
+        }),
+      }
+    );
+    const body = (await response.json()) as GoogleAdsErrorBody;
+    if (!response.ok || body.error) {
+      throw new Error(`Google Ads API error: ${body.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, raw: body };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
 /** Le o orcamento diario atual da campanha (em micros - 1_000_000 micros = 1 unidade monetaria). */
 export async function getGoogleCampaignBudget(
   credential: PlatformCredential,
