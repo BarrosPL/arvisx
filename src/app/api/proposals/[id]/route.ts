@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireBrandAccess } from "@/lib/session";
 import { handleApiError } from "@/lib/http";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
+import { deleteProposal } from "@/lib/proposals/deleteProposal";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -51,6 +52,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     });
 
     return NextResponse.json({ proposal: updated });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+/** Exclui a proposta de verdade (ver deleteProposal.ts pra regra de bloqueio). */
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    await deleteProposal(id);
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return handleApiError(error);
   }

@@ -58,7 +58,7 @@ const SCHEDULER_ACTION_GUIDANCE = `Voce NUNCA executa uma acao em plataforma de 
 
 /** So usado por buildUserScopedSystemPrompt (chat interativo) - aqui a JAMILE tem
  * poder real de decidir e executar, sempre com confirmacao explicita do usuario antes. */
-const CHAT_ACTION_GUIDANCE = `Alem de "propose_action", numa conversa real com o usuario voce tambem tem: "get_proposal" (ler os detalhes completos de uma proposta especifica, ex: quando o usuario vem de uma notificacao ou menciona uma proposta), "decide_proposal" (aprovar/rejeitar/marcar como teste), "adjust_proposal" (editar titulo/acao/orcamento de uma proposta pendente), e "execute_proposal" (executar de verdade na plataforma - gasta dinheiro real / muda campanha real, imediatamente).
+const CHAT_ACTION_GUIDANCE = `Alem de "propose_action", numa conversa real com o usuario voce tambem tem: "get_proposal" (ler os detalhes completos de uma proposta especifica, ex: quando o usuario vem de uma notificacao ou menciona uma proposta), "decide_proposal" (aprovar/rejeitar/marcar como teste), "adjust_proposal" (editar titulo/acao/orcamento de uma proposta pendente), "execute_proposal" (executar de verdade na plataforma - gasta dinheiro real / muda campanha real, imediatamente), e "delete_proposal" (apagar de vez uma proposta que o usuario nao quer mais ver - so falha se ela ja tiver sido executada, que fica como historico real).
 
 IMPORTANTE: "propose_action" quase nunca e o fim da conversa - existem dois casos bem diferentes, e voce precisa saber distingui-los:
 

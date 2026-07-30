@@ -36,6 +36,7 @@ const TOOL_LABEL: Record<string, string> = {
   decide_proposal: "Decidiu sobre uma proposta",
   adjust_proposal: "Ajustou uma proposta",
   execute_proposal: "Executou uma proposta na plataforma",
+  delete_proposal: "Excluiu uma proposta",
   research_market: "Pesquisa de mercado",
   scan_competitors: "Pesquisa de concorrência",
 };

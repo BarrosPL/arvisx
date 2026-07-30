@@ -1,4 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   CircleDot,
   FlaskConical,
@@ -7,10 +12,12 @@ import {
   Play,
   Sparkles,
   Target,
+  Trash2,
   TrendingUp,
   TriangleAlert,
   Undo2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { proposalStatusTone } from "@/lib/proposals/status";
 import { BrandAvatar } from "@/components/brand-avatar";
@@ -164,8 +171,31 @@ export interface ProposalBrandView {
  * (ChatCreativeAssetUpload em chat-panel.tsx).
  */
 export function ProposalCard({ proposal, brand }: { proposal: ProposalView; brand?: ProposalBrandView }) {
+  const router = useRouter();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const isNeedsData = proposal.status === "NEEDS_MORE_DATA";
   const isExecutionFailed = proposal.status === "EXECUTION_FAILED";
+  // Mesma regra do backend (deleteProposal.ts): so essas duas garantem que existe
+  // ExecutionLog - apagar deletaria historico de uma acao real na plataforma.
+  const isExecuted = proposal.status === "EXECUTED" || isExecutionFailed;
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/proposals/${proposal.id}`, { method: "DELETE" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(body.error ?? "Falha ao excluir proposta.");
+        return;
+      }
+      toast.success("Proposta excluída.");
+      router.refresh();
+    } finally {
+      setIsDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
 
   return (
     <Card className="shadow-sm">
@@ -296,10 +326,46 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
           </p>
         ) : null}
 
-        <div className="border-t pt-3">
+        <div className="flex items-center justify-between gap-2 border-t pt-3">
           <span className="text-xs text-muted-foreground">
             Criada em {formatDateTime(new Date(proposal.createdAt))}
           </span>
+          {!isExecuted ? (
+            confirmingDelete ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Excluir de vez?</span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 rounded-full px-2.5 text-xs"
+                  disabled={isDeleting}
+                  onClick={handleDelete}
+                >
+                  Confirmar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 rounded-full px-2.5 text-xs"
+                  disabled={isDeleting}
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setConfirmingDelete(true)}
+                title="Excluir proposta"
+                aria-label="Excluir proposta"
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 />
+              </Button>
+            )
+          ) : null}
         </div>
       </CardContent>
     </Card>

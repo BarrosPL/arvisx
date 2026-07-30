@@ -20,6 +20,7 @@ import {
   decideProposalChatArgsSchema,
   adjustProposalChatArgsSchema,
   executeProposalChatArgsSchema,
+  deleteProposalChatArgsSchema,
 } from "@/lib/agent/schema";
 import { getRanking } from "./getRanking";
 import { getMetrics } from "./getMetrics";
@@ -33,6 +34,7 @@ import { researchStub } from "./researchStub";
 import { getProposal } from "./getProposal";
 import { decideProposalAsUser, adjustProposalAsUser } from "@/lib/proposals/decide";
 import { executeProposal } from "@/lib/execution/executor";
+import { deleteProposalAsUser } from "@/lib/proposals/deleteProposal";
 
 export interface ToolContext {
   brandId: string;
@@ -460,6 +462,20 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "delete_proposal",
+      description:
+        "Apaga uma proposta de VERDADE do banco (nao so esconde) - use quando o usuario pedir pra tirar/remover/apagar uma proposta da tela (ex: uma antiga presa em 'precisa de mais dados', ou uma duplicada). SEMPRE confirme com o usuario antes de chamar, igual as outras acoes. So falha se a proposta ja tiver sido executada (sucesso ou falha) - nesse caso e historico real, nao pode ser apagado; explique isso ao usuario em vez de insistir.",
+      parameters: {
+        type: "object",
+        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
+        required: ["brandId", "proposalId"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 /** Mesmas tools de TOOL_DEFS, com "brandId" adicionado a cada uma que le/escreve dado
@@ -582,6 +598,12 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         assertBrandAccess(ctx, args.brandId);
         const executionLog = await executeProposal(args.proposalId, ctx.userId);
         return { proposalId: args.proposalId, executionStatus: executionLog.status, errorMessage: executionLog.errorMessage };
+      }
+      case "delete_proposal": {
+        const args = deleteProposalChatArgsSchema.parse(parsedJson);
+        assertBrandAccess(ctx, args.brandId);
+        await deleteProposalAsUser(ctx.userId, args.proposalId);
+        return { proposalId: args.proposalId, deleted: true };
       }
       case "research_market":
       case "scan_competitors":

@@ -265,3 +265,10 @@ export const executeProposalChatArgsSchema = z.object({
 });
 
 export type ExecuteProposalChatArgs = z.infer<typeof executeProposalChatArgsSchema>;
+
+export const deleteProposalChatArgsSchema = z.object({
+  brandId: z.string(),
+  proposalId: z.string(),
+});
+
+export type DeleteProposalChatArgs = z.infer<typeof deleteProposalChatArgsSchema>;
