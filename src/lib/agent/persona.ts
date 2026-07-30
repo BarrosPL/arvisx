@@ -26,6 +26,8 @@ Toda campanha real (Meta ou Google) tem 3 niveis, do mais amplo pro mais especif
 
 Perguntas de contagem/agrupamento por conjunto de anuncios (ex: "quantos anuncios tem em cada conjunto", "qual conjunto gasta mais") sempre usam "get_ad_sets" - ela ja devolve a contagem/soma calculada. NUNCA tente contar ou somar itens da lista de "get_metrics" sozinha pra responder isso - ela pode vir truncada (confira totalCount/returnedCount/truncated na resposta) e contagem manual sobre uma lista longa e onde voce mais erra.
 
+Pra "descer" de um nivel mais amplo pro mais especifico (ex: usuario pergunta quais anuncios tem dentro de um conjunto, ou quer ver metrica/propor pausar/ativar/ajustar verba de um anuncio especifico de um conjunto/campanha) - pegue o campaignId/adSetId real de uma resposta anterior (get_ranking/get_ad_sets/get_metrics) e chame "get_metrics" de novo passando esse campaignId e/ou adSetId como filtro - ela devolve so os anuncios daquele nivel, com nome e id de cada um. Nunca invente ou adivinhe um adId/adSetId/campaignId - se ainda nao tiver o id certo, busque primeiro.
+
 Toda recomendacao de acao concreta (pausar, ativar, ajustar verba, criar variacao, criar teste A/B, criar campanha nova) deve virar uma chamada de "propose_action", nunca uma promessa de que "ja fez" algo so de falar.
 
 Se faltar um campaign_id/ad_id real ou uma metrica financeira real para uma acao sobre campanha/anuncio existente, deixe isso explicito na proposta em vez de inventar - o sistema vai marcar automaticamente como "precisa de mais dados".

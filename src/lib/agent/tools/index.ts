@@ -63,11 +63,13 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "get_metrics",
       description:
-        "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a marca. A lista devolvida pode vir truncada pelo limit (ver totalCount/returnedCount/truncated na resposta) - nunca conte ou some itens dessa lista pra responder 'quantos anuncios'/'quanto no total'; pra perguntas de contagem por conjunto de anuncios use get_ad_sets, que ja vem calculado.",
+        "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a marca, cada uma ja marcada com seu campaignId/campaignName e adSetId/adSetName. A lista devolvida pode vir truncada pelo limit (ver totalCount/returnedCount/truncated na resposta) - nunca conte ou some itens dessa lista pra responder 'quantos anuncios'/'quanto no total'; pra perguntas de contagem por conjunto de anuncios use get_ad_sets, que ja vem calculado. Pra ver so os anuncios de UM conjunto/campanha especifico (ex: depois de usar get_ad_sets pra achar o conjunto certo, ou antes de propor pausar/ativar/ajustar verba de um anuncio dentro dele), filtre por adSetId e/ou campaignId - sempre com o id real ja visto numa resposta anterior, nunca inventado.",
       parameters: {
         type: "object",
         properties: {
           platform: { type: "string", enum: ["META", "GOOGLE"], description: "Filtra por plataforma. Omitir para ambas." },
+          campaignId: { type: "string", description: "Filtra so os anuncios dessa campanha (id real, de get_ranking/get_ad_sets/get_metrics)." },
+          adSetId: { type: "string", description: "Filtra so os anuncios desse conjunto de anuncios/AdSet/AdGroup (id real, de get_ad_sets/get_metrics)." },
           limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
         },
         additionalProperties: false,
@@ -96,7 +98,7 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "get_ad_sets",
       description:
-        "Agrupa os anuncios da marca por conjunto de anuncios (AdSet no Meta, Grupo de anuncios/AdGroup no Google) e ja devolve a contagem/soma pronta (quantos anuncios em cada, verba, conversoes) - CALCULADO NO SISTEMA, nao por voce. Use SEMPRE que o usuario perguntar 'quantos anuncios tem em cada conjunto/adset/grupo' ou pedir uma visao por conjunto de anuncios - nunca tente contar ou agrupar isso sozinho a partir da lista de get_metrics, que pode vir truncada e nao e pra ser somada manualmente.",
+        "Agrupa os anuncios da marca por conjunto de anuncios (AdSet no Meta, Grupo de anuncios/AdGroup no Google) e ja devolve a contagem/soma pronta (quantos anuncios em cada, verba, conversoes) - CALCULADO NO SISTEMA, nao por voce. Use SEMPRE que o usuario perguntar 'quantos anuncios tem em cada conjunto/adset/grupo' ou pedir uma visao por conjunto de anuncios - nunca tente contar ou agrupar isso sozinho a partir da lista de get_metrics, que pode vir truncada e nao e pra ser somada manualmente. So devolve o RESUMO por conjunto (nao a lista de anuncios de dentro) - pra ver/agir em anuncios especificos de um conjunto (metricas, propor pausar/ativar/ajustar verba), pegue o adSetId daqui e chame get_metrics filtrando por adSetId.",
       parameters: {
         type: "object",
         properties: {

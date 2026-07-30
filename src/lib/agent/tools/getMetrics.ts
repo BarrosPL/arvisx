@@ -19,6 +19,8 @@ export async function getMetrics(brandId: string, args: GetMetricsArgs) {
     where: {
       brandId,
       ...(args.platform ? { platform: args.platform } : {}),
+      ...(args.campaignId ? { platformCampaignId: args.campaignId } : {}),
+      ...(args.adSetId ? { platformAdSetId: args.adSetId } : {}),
     },
     orderBy: { collectedAt: "desc" },
     distinct: ["credentialId", "platformAdId"],

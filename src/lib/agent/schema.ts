@@ -113,6 +113,11 @@ export type ProposalPayload = z.infer<typeof proposalPayloadSchema>;
 
 export const getMetricsArgsSchema = z.object({
   platform: platformSchema.optional(),
+  // Pra "puxar" (drill down) de campanha/conjunto pra anuncio: filtra so os
+  // anuncios daquela campanha/conjunto especifico, usando os ids ja devolvidos por
+  // get_ad_sets/get_ranking - nunca filtrar por nome, so por id real.
+  campaignId: z.string().optional(),
+  adSetId: z.string().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
 
