@@ -17,6 +17,7 @@ import {
 import { FUNNEL_LABEL, FUNNEL_CLASSNAME } from "@/lib/ranking/funnelLabels";
 import { adStatusStyle } from "@/lib/ads/statusStyle";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 
 type Platform = "META" | "GOOGLE";
 
@@ -68,10 +69,6 @@ const STATUS_TONE: Record<CredentialItem["status"], StatusTone> = {
 
 const PLATFORM_LABEL: Record<Platform, string> = { META: "Meta Ads", GOOGLE: "Google Ads" };
 
-function currency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
-}
-
 function integer(value: number) {
   return value.toLocaleString("pt-BR");
 }
@@ -109,23 +106,23 @@ function AdCard({ ad }: { ad: AdRowView }) {
       </div>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-        <StatTile label="Investimento" value={currency(ad.spend)} />
+        <StatTile label="Investimento" value={formatCurrency(ad.spend)} />
         <StatTile label="CTR" value={`${ad.ctr.toFixed(2)}%`} />
-        <StatTile label="CPC" value={currency(ad.cpc)} />
+        <StatTile label="CPC" value={formatCurrency(ad.cpc)} />
         <StatTile label="Conversões" value={String(ad.conversions)} />
-        <StatTile label="CPL/CPA" value={costPerResult !== null ? currency(costPerResult) : "—"} />
+        <StatTile label="CPL/CPA" value={costPerResult !== null ? formatCurrency(costPerResult) : "—"} />
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
         <span>Alcance {ad.reach !== null ? integer(ad.reach) : "—"}</span>
         <span>Impressões {integer(ad.impressions)}</span>
         <span>Frequência {ad.frequency !== null ? ad.frequency.toFixed(2) : "—"}</span>
-        <span>CPM {ad.cpm !== null ? currency(ad.cpm) : "—"}</span>
+        <span>CPM {ad.cpm !== null ? formatCurrency(ad.cpm) : "—"}</span>
         <span>Cliques {integer(ad.clicks)}</span>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Coletado em {new Date(ad.collectedAt).toLocaleString("pt-BR")}
+        Coletado em {formatDateTime(new Date(ad.collectedAt))}
       </p>
     </div>
   );
@@ -148,7 +145,7 @@ function AdAccountAdsGrid({ ads }: { ads: AdRowView[] }) {
     <div className="flex flex-col gap-3 px-3 py-3">
       <p className="text-xs text-muted-foreground">
         Últimos 7 dias, mesma janela do Gerenciador de Anúncios · {ads.length} anúncio(s) · investimento
-        total {currency(totalSpend)} · {integer(totalImpressions)} impressões — confira esses totais contra
+        total {formatCurrency(totalSpend)} · {integer(totalImpressions)} impressões — confira esses totais contra
         a plataforma para validar os dados.
       </p>
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -253,7 +250,7 @@ export function CredentialsManager({
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {credential.lastCheckedAt
-                          ? new Date(credential.lastCheckedAt).toLocaleString("pt-BR")
+                          ? formatDateTime(new Date(credential.lastCheckedAt))
                           : "nunca"}
                       </TableCell>
                     </TableRow>

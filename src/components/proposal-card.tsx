@@ -17,6 +17,7 @@ import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
 import { StatusBadge } from "@/components/status-badge";
 import type { CampaignPlan } from "@/lib/agent/schema";
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 
 export const TYPE_LABEL: Record<string, string> = {
   NEW_CAMPAIGN: "Nova campanha",
@@ -59,10 +60,6 @@ const METRIC_LABEL: Record<string, string> = {
 
 const CURRENCY_METRIC_KEYS = new Set(["spend", "cpc", "cpl", "cpa", "currentBudget", "proposedBudget"]);
 const PERCENT_METRIC_KEYS = new Set(["ctr"]);
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
-}
 
 function formatMetricValue(key: string, value: unknown): string {
   const num = typeof value === "number" ? value : Number(value);
@@ -237,7 +234,7 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
           <div className="rounded-lg border bg-cyan-500/5 p-3">
             <p className="text-sm font-medium">
               {proposal.abTest.status === "RUNNING"
-                ? `Teste A/B em andamento até ${new Date(proposal.abTest.endsAt).toLocaleDateString("pt-BR")}`
+                ? `Teste A/B em andamento até ${formatDate(new Date(proposal.abTest.endsAt))}`
                 : `Teste A/B concluído — ${
                     proposal.abTest.winner === "VARIANT"
                       ? "variante venceu"
@@ -301,7 +298,7 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
 
         <div className="border-t pt-3">
           <span className="text-xs text-muted-foreground">
-            Criada em {new Date(proposal.createdAt).toLocaleString("pt-BR")}
+            Criada em {formatDateTime(new Date(proposal.createdAt))}
           </span>
         </div>
       </CardContent>

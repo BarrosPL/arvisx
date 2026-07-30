@@ -10,6 +10,7 @@ import { PlatformIconTile } from "@/components/brand-marks";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { BrandCombobox, type BrandComboboxOption } from "@/components/brand-combobox";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
+import { formatDateTime } from "@/lib/format";
 
 type Platform = "META" | "GOOGLE";
 type Status = "PENDING" | "CONNECTED" | "AUTH_ERROR" | "DISCONNECTED";
@@ -297,7 +298,7 @@ function ConnectionCard({
           </div>
           <span className="truncate text-xs text-muted-foreground">
             {connection.assignmentsCount} conta(s) atribuída(s) · última checagem:{" "}
-            {connection.lastCheckedAt ? new Date(connection.lastCheckedAt).toLocaleString("pt-BR") : "nunca"}
+            {connection.lastCheckedAt ? formatDateTime(new Date(connection.lastCheckedAt)) : "nunca"}
           </span>
           {connection.lastError ? (
             <span className="flex items-center gap-1 truncate text-xs text-destructive">

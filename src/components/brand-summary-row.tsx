@@ -3,6 +3,7 @@
 import { BrandAvatar } from "@/components/brand-avatar";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
 import { useJamileChat } from "@/components/jamile-launcher";
+import { formatCurrency } from "@/lib/format";
 
 export interface BrandSummaryView {
   id: string;
@@ -12,10 +13,6 @@ export interface BrandSummaryView {
   verdictTone: StatusTone;
   spend: number;
   openProposalsCount: number;
-}
-
-function currency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
 }
 
 /**
@@ -38,7 +35,7 @@ export function BrandSummaryRow({ brand }: { brand: BrandSummaryView }) {
         <span className="truncate text-sm font-medium">{brand.name}</span>
       </div>
       <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-        <span className="hidden sm:inline">{brand.spend > 0 ? `${currency(brand.spend)} investidos` : "sem dados coletados"}</span>
+        <span className="hidden sm:inline">{brand.spend > 0 ? `${formatCurrency(brand.spend)} investidos` : "sem dados coletados"}</span>
         {brand.openProposalsCount > 0 ? (
           <span>{brand.openProposalsCount} proposta(s)</span>
         ) : null}

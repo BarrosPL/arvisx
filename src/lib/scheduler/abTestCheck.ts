@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { AbTest } from "@/generated/prisma/client";
 import { evaluateProposalReadiness, deriveInitialStatus } from "@/lib/proposals/dataEnforcement";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 type Winner = "CONTROL" | "VARIANT" | "INCONCLUSIVE";
 
@@ -100,7 +101,7 @@ async function finalizeAbTest(test: AbTest): Promise<void> {
       type: "PAUSE_AD",
       status: deriveInitialStatus(readiness),
       title: `Teste A/B concluído — ${winnerLabel} venceu`,
-      reason: `Teste A/B de verba rodou de ${test.startedAt.toLocaleDateString("pt-BR")} até ${test.endsAt.toLocaleDateString("pt-BR")}. Controle: €${test.controlValue}/dia (CPL ${control.cpl ?? "n/d"}). Variante: €${test.variantValue}/dia (CPL ${variant.cpl ?? "n/d"}).`,
+      reason: `Teste A/B de verba rodou de ${formatDate(test.startedAt)} até ${formatDate(test.endsAt)}. Controle: ${formatCurrency(Number(test.controlValue))}/dia (CPL ${control.cpl ?? "n/d"}). Variante: ${formatCurrency(Number(test.variantValue))}/dia (CPL ${variant.cpl ?? "n/d"}).`,
       metricsJson,
       suggestedAction: `Pausar o anúncio perdedor (${loserAdId}) e manter só ${winnerLabel} rodando.`,
       risk: "Nenhuma ação automática foi tomada - essa é só a recomendação com base no resultado real do teste.",

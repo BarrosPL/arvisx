@@ -10,6 +10,7 @@ import { RankingPanel, type RankingView } from "@/components/ranking-panel";
 import { BrandAvatar } from "@/components/brand-avatar";
 import { BrandAdvancedSettings } from "@/components/brand-advanced-settings";
 import { TalkToJamileButton } from "@/components/talk-to-jamile-button";
+import { formatDateTime } from "@/lib/format";
 
 interface PageProps {
   params: Promise<{ brandSlug: string }>;
@@ -64,7 +65,7 @@ export default async function BrandDetailPage({ params }: PageProps) {
             </div>
             <p className="truncate text-sm text-muted-foreground">
               {latestRanking
-                ? `Última análise: ${latestRanking.computedAt.toLocaleString("pt-BR")}`
+                ? `Última análise: ${formatDateTime(latestRanking.computedAt)}`
                 : "Ainda sem análise"}
             </p>
           </div>

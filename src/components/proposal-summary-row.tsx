@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TYPE_LABEL } from "@/components/proposal-card";
 import { proposalStatusTone } from "@/lib/proposals/status";
 import { useJamileChat } from "@/components/jamile-launcher";
+import { formatDate } from "@/lib/format";
 
 export interface ProposalSummaryView {
   id: string;
@@ -56,7 +57,7 @@ export function ProposalSummaryRow({
       <div className="flex shrink-0 items-center gap-3">
         <StatusBadge tone={status.tone} label={status.label} />
         <span className="hidden text-xs text-muted-foreground sm:inline">
-          {new Date(proposal.createdAt).toLocaleDateString("pt-BR")}
+          {formatDate(new Date(proposal.createdAt))}
         </span>
       </div>
     </button>

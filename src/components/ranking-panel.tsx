@@ -10,6 +10,7 @@ import { FUNNEL_LABEL, FUNNEL_CLASSNAME } from "@/lib/ranking/funnelLabels";
 import { StatusBadge } from "@/components/status-badge";
 import { verdictTone } from "@/lib/ranking/verdictLabels";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 
 type Verdict = "BOM" | "MEDIO" | "RUIM";
 
@@ -46,10 +47,6 @@ const VERDICT_BORDER: Record<Verdict, string> = {
   MEDIO: "border-l-4 border-l-border",
   RUIM: "border-l-4 border-l-destructive",
 };
-
-function currency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
-}
 
 export function RankingPanel({ brandId, initial }: { brandId: string; initial: RankingView | null }) {
   const router = useRouter();
@@ -112,10 +109,10 @@ export function RankingPanel({ brandId, initial }: { brandId: string; initial: R
                   <StatusBadge tone={verdictTone(action.verdict).tone} label={action.reason} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {action.row.platform} · investimento {currency(action.row.spend)} · CTR{" "}
-                  {action.row.ctr.toFixed(2)}% · CPC {currency(action.row.cpc)} · conversões{" "}
+                  {action.row.platform} · investimento {formatCurrency(action.row.spend)} · CTR{" "}
+                  {action.row.ctr.toFixed(2)}% · CPC {formatCurrency(action.row.cpc)} · conversões{" "}
                   {action.row.conversions}
-                  {action.row.cpl !== null ? ` · CPL ${currency(action.row.cpl)}` : ""}
+                  {action.row.cpl !== null ? ` · CPL ${formatCurrency(action.row.cpl)}` : ""}
                 </p>
                 <p className="mt-2 text-sm">
                   <span className="font-medium">O que fazer: </span>
@@ -135,7 +132,7 @@ export function RankingPanel({ brandId, initial }: { brandId: string; initial: R
         )}
         {ranking ? (
           <p className="text-xs text-muted-foreground">
-            Última análise: {new Date(ranking.computedAt).toLocaleString("pt-BR")}
+            Última análise: {formatDateTime(new Date(ranking.computedAt))}
           </p>
         ) : null}
       </CardContent>

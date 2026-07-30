@@ -14,10 +14,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { AttentionItem } from "@/components/attention-item";
 import { verdictTone } from "@/lib/ranking/verdictLabels";
-
-function currency(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "EUR" });
-}
+import { formatCurrency, formatDateTime, formatTime } from "@/lib/format";
 
 function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
   if (!Array.isArray(recommendedActionsJson) || recommendedActionsJson.length === 0) return undefined;
@@ -59,7 +56,7 @@ function buildNarrativeSummary(
   if (counts.ruim > 0) parts.push(`${counts.ruim} precisando de atenção`);
   if (counts.semDados > 0) parts.push(`${counts.semDados} sem dado suficiente ainda`);
   const statusSentence = parts.length > 0 ? parts.join(", ") : "nenhuma com dado suficiente ainda";
-  return `Analisei suas ${verdicts.length} marca(s): ${statusSentence}. Investimento total: ${currency(totalSpend)}.`;
+  return `Analisei suas ${verdicts.length} marca(s): ${statusSentence}. Investimento total: ${formatCurrency(totalSpend)}.`;
 }
 
 export default async function DashboardPage() {
@@ -217,7 +214,7 @@ export default async function DashboardPage() {
         title={greetingName ? `Olá, ${greetingName}` : "Visão geral"}
         description={
           runSummary
-            ? `Última análise automática em ${runSummary.startedAt.toLocaleString("pt-BR")}`
+            ? `Última análise automática em ${formatDateTime(runSummary.startedAt)}`
             : "A primeira análise automática da JAMILE ainda vai rodar em instantes."
         }
         actions={<RunAnalysisButton />}
@@ -246,10 +243,10 @@ export default async function DashboardPage() {
           icon={Inbox}
           tone={allOpenProposals.length > 0 ? "warning" : "default"}
         />
-        <StatCard label="Investimento total" value={currency(totalSpend)} icon={Wallet} />
+        <StatCard label="Investimento total" value={formatCurrency(totalSpend)} icon={Wallet} />
         <StatCard
           label="Última análise"
-          value={runSummary ? runSummary.startedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+          value={runSummary ? formatTime(runSummary.startedAt, { hour: "2-digit", minute: "2-digit" }) : "—"}
           icon={Clock}
         />
       </div>
