@@ -8,6 +8,10 @@ export interface NormalizedAdRow {
   adName: string | null;
   /** Meta: id do AdSet. Google: id do AdGroup. */
   platformAdSetId: string | null;
+  /** Nome do AdSet (Meta) / AdGroup (Google) - nivel intermediario entre campanha e
+   * anuncio, historicamente nunca coletado (so o id vinha) - por isso a JAMILE nao
+   * conseguia diferenciar/nomear esse nivel em conversa. */
+  adSetName: string | null;
   spend: number;
   impressions: number;
   clicks: number;

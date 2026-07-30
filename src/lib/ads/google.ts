@@ -45,7 +45,7 @@ export function normalizeCustomerId(externalAccountId: string): string {
 
 interface GoogleAdsMetricsRow {
   campaign?: { id?: string; name?: string };
-  adGroup?: { id?: string };
+  adGroup?: { id?: string; name?: string };
   adGroupAd?: { ad?: { id?: string; name?: string }; status?: string };
   metrics?: {
     costMicros?: string;
@@ -68,6 +68,7 @@ const GAQL_QUERY = `
     campaign.id,
     campaign.name,
     ad_group.id,
+    ad_group.name,
     ad_group_ad.ad.id,
     ad_group_ad.ad.name,
     ad_group_ad.status,
@@ -91,6 +92,7 @@ function normalizeRow(row: GoogleAdsMetricsRow): NormalizedAdRow {
     platformAdId: row.adGroupAd?.ad?.id ?? null,
     adName: row.adGroupAd?.ad?.name ?? null,
     platformAdSetId: row.adGroup?.id ?? null,
+    adSetName: row.adGroup?.name ?? null,
     spend,
     impressions: Number(row.metrics?.impressions ?? 0),
     clicks: Number(row.metrics?.clicks ?? 0),

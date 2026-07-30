@@ -22,6 +22,7 @@ export async function computeAndSaveRanking(brandId: string) {
     platformAdId: snapshot.platformAdId,
     adName: snapshot.adName,
     platformAdSetId: snapshot.platformAdSetId,
+    adSetName: snapshot.adSetName,
     funnelStage: classifyFunnelStage(snapshot.campaignName),
     spend: Number(snapshot.spend),
     impressions: snapshot.impressions,

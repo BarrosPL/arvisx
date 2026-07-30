@@ -27,6 +27,11 @@ export async function getMetrics(brandId: string, args: GetMetricsArgs) {
       campaignName: snapshot.campaignName,
       adId: snapshot.platformAdId,
       adName: snapshot.adName,
+      // Nivel intermediario (AdSet no Meta, AdGroup no Google) - nao confundir com
+      // campanha nem com anuncio. adSetName vem null em coletas antigas, antes do
+      // campo existir.
+      adSetId: snapshot.platformAdSetId,
+      adSetName: snapshot.adSetName,
       collectionState: snapshot.collectionState,
       funnelStage: classifyFunnelStage(snapshot.campaignName),
       spend: Number(snapshot.spend),

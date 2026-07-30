@@ -291,6 +291,10 @@ model AdMetricSnapshot {
   // Meta: id do AdSet (onde a verba mora). Google: id do AdGroup (necessario pra
   // pausar/ativar o anuncio - o resourceName exige adGroupId~adId).
   platformAdSetId    String?
+  // Nome do AdSet (Meta) / AdGroup (Google) - nivel intermediario entre campanha e
+  // anuncio. Null em coletas antigas (campo novo, so preenchido a partir desta
+  // migration pra frente).
+  adSetName          String?
   collectionState    CollectionState
   dateRangeStart     DateTime
   dateRangeEnd       DateTime

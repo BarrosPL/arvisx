@@ -45,6 +45,7 @@ export async function collectForBrand(
             platformAdId: row.platformAdId,
             adName: row.adName,
             platformAdSetId: row.platformAdSetId,
+            adSetName: row.adSetName,
             collectionState: CollectionState.OK,
             dateRangeStart,
             dateRangeEnd,

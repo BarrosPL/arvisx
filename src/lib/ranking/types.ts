@@ -8,6 +8,7 @@ export interface RankableRow {
   platformAdId: string | null;
   adName: string | null;
   platformAdSetId: string | null;
+  adSetName: string | null;
   funnelStage: FunnelStage | null;
   spend: number;
   impressions: number;

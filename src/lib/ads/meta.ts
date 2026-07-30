@@ -26,6 +26,7 @@ interface MetaInsightRow {
   ad_id?: string;
   ad_name?: string;
   adset_id?: string;
+  adset_name?: string;
   spend?: string;
   impressions?: string;
   clicks?: string;
@@ -59,6 +60,7 @@ function normalizeRow(row: MetaInsightRow): NormalizedAdRow {
     platformAdId: row.ad_id ?? null,
     adName: row.ad_name ?? null,
     platformAdSetId: row.adset_id ?? null,
+    adSetName: row.adset_name ?? null,
     spend,
     impressions: Number(row.impressions || 0),
     clicks: Number(row.clicks || 0),
@@ -136,6 +138,7 @@ export async function fetchMetaInsights(
     "ad_id",
     "ad_name",
     "adset_id",
+    "adset_name",
     "spend",
     "impressions",
     "clicks",
