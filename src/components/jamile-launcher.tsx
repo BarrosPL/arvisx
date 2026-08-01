@@ -18,7 +18,7 @@ interface JamileChatContextValue {
 const JamileChatContext = createContext<JamileChatContextValue | null>(null);
 
 /** Deixa qualquer componente da árvore abrir o popup da JAMILE (ex: um botão
- * "Falar com a JAMILE" numa página de marca), sem precisar saber como o painel
+ * "Falar com a JAMILE" em qualquer página), sem precisar saber como o painel
  * é montado/carregado - só chama openChat(). */
 export function useJamileChat(): JamileChatContextValue {
   const ctx = useContext(JamileChatContext);

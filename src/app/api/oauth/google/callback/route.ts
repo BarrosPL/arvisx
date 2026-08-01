@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Um usuario so pode ter uma conexao por plataforma (ProviderConnection_userId_platform_key) -
     // reconectar (ex: pra renovar um refresh token revogado) atualiza a conexao existente em vez
-    // de criar outra, senao AdCredential/marcas ja atribuidas a ela ficariam orfas de token valido.
+    // de criar outra, senao as contas ja registradas por ela ficariam orfas de token valido.
     const connection = await prisma.providerConnection.upsert({
       where: { userId_platform: { userId, platform: "GOOGLE" } },
       create: {
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Cada conta descoberta ja vira sua propria marca automaticamente - nao bloqueia
+    // Cada conta descoberta ja entra no sistema automaticamente - nao bloqueia
     // o redirect se falhar, a pagina de conexoes tenta de novo no carregamento.
     try {
       await autoProvisionAccountsForConnection(connection.id);

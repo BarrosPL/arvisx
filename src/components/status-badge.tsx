@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 /**
- * Vocabulario visual unico pra todo "tom" de status do produto (marca, credencial,
+ * Vocabulario visual unico pra todo "tom" de status do produto (conta, credencial,
  * proposta, execucao, anuncio, teste A/B) - cada dominio continua com seu proprio
  * enum/valor real (nunca mudamos o que o status SIGNIFICA), só centralizamos como ele
  * aparece: sempre rotulo em texto + cor + icone, nunca cor sozinha.

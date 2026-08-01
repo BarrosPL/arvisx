@@ -22,7 +22,7 @@ const TONE_ICON_CLASSNAME: Record<StatusTone, string> = {
  * árvore de decisão (inclusive entender o que precisa de atenção) passa pelo chat.
  *
  * `proposalId` (opcional - nem toda entrada de atenção é uma proposta, ex: erro de
- * rodada do scheduler ou veredito ruim de marca) habilita um botão de excluir de
+ * rodada do scheduler ou veredito ruim de conta) habilita um botão de excluir de
  * verdade, direto daqui - antes só dava pra apagar uma proposta pedindo pra JAMILE no
  * chat. Mesmo padrão de confirmação inline e tratamento de erro que
  * proposal-card.tsx já usa (a rota já bloqueia excluir proposta já executada,

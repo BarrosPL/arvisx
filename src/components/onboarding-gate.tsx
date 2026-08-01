@@ -9,7 +9,7 @@ interface Step {
 
 const STEPS: Step[] = [
   { title: "Conectar Meta Ads ou Google Ads", description: "Um clique, sem precisar preencher nada." },
-  { title: "Contas viram marcas automaticamente", description: "Cada conta descoberta já vira sua própria marca — sem atribuição manual." },
+  { title: "Suas contas entram sozinhas", description: "Toda conta de anúncio visível no login já entra no sistema — sem atribuição manual." },
   { title: "Aguardar a primeira análise", description: "A JAMILE coleta os dados reais e calcula o diagnóstico sozinha." },
   { title: "Revisar recomendações", description: "Aprove, rejeite ou ajuste cada proposta antes de qualquer execução." },
 ];

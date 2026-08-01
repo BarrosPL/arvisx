@@ -334,7 +334,7 @@ export function ChatPanel({
         <JamileAvatar />
         <div className="flex min-w-0 flex-col">
           <span className="font-medium">JAMILE</span>
-          <span className="truncate text-xs text-muted-foreground">Todas as suas marcas</span>
+          <span className="truncate text-xs text-muted-foreground">Todas as suas contas</span>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
@@ -359,10 +359,10 @@ export function ChatPanel({
           <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
             <JamileAvatar />
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Converse com a JAMILE sobre suas marcas</p>
+              <p className="text-sm font-medium">Converse com a JAMILE sobre suas contas</p>
               <p className="max-w-sm text-sm text-muted-foreground text-pretty">
                 Ela analisa diagnóstico e métricas reais, pesquisa a biblioteca de anúncios e sugere
-                ajustes de campanha ou criativo em qualquer uma das suas marcas — pode trocar de
+                ajustes de campanha ou criativo em qualquer uma das suas contas — pode trocar de
                 assunto na mesma conversa. Toda ação vira uma proposta na fila de aprovação — nunca é
                 executada sozinha.
               </p>
@@ -440,7 +440,7 @@ export function ChatPanel({
                 sendMessage(input.trim());
               }
             }}
-            placeholder="Pergunte algo sobre qualquer uma das suas marcas..."
+            placeholder="Pergunte algo sobre qualquer uma das suas contas..."
             className="min-h-10 resize-none"
             disabled={isSending}
           />
