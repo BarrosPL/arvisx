@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { collectAllCampaignsForAccount } from "@/lib/ads/collectCampaigns";
+import { checkMetaThrottle, currentMetaThrottle } from "@/lib/ads/metaThrottle";
 
 let isRunning = false;
 
@@ -15,6 +16,9 @@ export interface CollectRoundResult {
   credentials: number;
   errors: number;
   skipped: boolean;
+  /** Contas puladas por estarem perto do limite de cota da Meta - não é erro, é a
+   * proteção funcionando (elas voltam na rodada seguinte, quando a cota já decaiu). */
+  throttled: number;
 }
 
 /**
@@ -34,7 +38,7 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
   if (isRunning) {
     // Coleta anterior ainda rodando (mais lenta que o intervalo) - pular esta em vez de
     // empilhar duas em cima da mesma conta.
-    return { accounts: 0, credentials: 0, errors: 0, skipped: true };
+    return { accounts: 0, credentials: 0, errors: 0, skipped: true, throttled: 0 };
   }
   isRunning = true;
 
@@ -44,13 +48,32 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
       // tempo a toa - volta sozinha pro ciclo quando uma reconexao consertar o status.
       where: { status: { not: "AUTH_ERROR" } },
       orderBy: { createdAt: "asc" },
-      select: { id: true },
+      select: { id: true, externalAccountId: true },
     });
 
     let credentials = 0;
     let errors = 0;
+    let throttled = 0;
 
     for (const account of accounts) {
+      // A Meta informa a cota consumida em cada resposta (metaThrottle.ts). Se a conta
+      // anterior ja veio perto do teto, parar aqui e melhor do que insistir e levar o
+      // erro de excesso de requisicao - a conta volta na proxima rodada, com a cota
+      // ja decaida.
+      const decision = checkMetaThrottle(account.externalAccountId);
+      if (decision.backOff) {
+        throttled += 1;
+        console.log(`[coleta] conta ${account.externalAccountId} pulada - ${decision.reason}`);
+        // Limite do APP e compartilhado entre todas as contas: nao adianta seguir pras
+        // proximas, so gastaria chamada pra levar erro.
+        if (decision.appLevel) {
+          throttled += accounts.length - accounts.indexOf(account) - 1;
+          console.log("[coleta] rodada interrompida - limite do app atingido");
+          break;
+        }
+        continue;
+      }
+
       const summaries = await collectAllCampaignsForAccount(account.id);
       credentials += summaries.length;
       errors += summaries.filter((s) => s.state === "AUTH_ERROR" || s.state === "API_ERROR").length;
@@ -60,7 +83,12 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
       await sleep(ACCOUNT_DELAY_MS);
     }
 
-    return { accounts: accounts.length, credentials, errors, skipped: false };
+    const { appPct } = currentMetaThrottle();
+    if (appPct !== null) {
+      console.log(`[coleta] cota do app na Meta: ${appPct}%`);
+    }
+
+    return { accounts: accounts.length, credentials, errors, skipped: false, throttled };
   } finally {
     isRunning = false;
   }

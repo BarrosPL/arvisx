@@ -28,11 +28,11 @@ export function RefreshDataButton() {
       if (body.skipped) {
         toast.info("Uma atualização já estava em andamento.");
       } else {
-        toast.success(
-          body.errors > 0
-            ? `Dados atualizados (${body.errors} conta(s) com erro).`
-            : "Dados atualizados."
-        );
+        const notes = [
+          body.errors > 0 ? `${body.errors} conta(s) com erro` : null,
+          body.throttled > 0 ? `${body.throttled} adiada(s) por limite da Meta` : null,
+        ].filter(Boolean);
+        toast.success(notes.length > 0 ? `Dados atualizados (${notes.join(", ")}).` : "Dados atualizados.");
       }
       router.refresh();
     } finally {

@@ -60,7 +60,8 @@ export async function register() {
       }
       console.log(
         `[coleta] ${result.accounts} conta(s)` +
-          (result.errors > 0 ? `, ${result.errors} com erro` : "")
+          (result.errors > 0 ? `, ${result.errors} com erro` : "") +
+          (result.throttled > 0 ? `, ${result.throttled} adiada(s) por limite de cota` : "")
       );
     } catch (error) {
       console.error("[coleta] falhou:", error);

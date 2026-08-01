@@ -1,5 +1,6 @@
 import type { CollectionResult, NormalizedAdRow, PlatformCredential } from "./types";
 import { classifyCollectionError, classifyRows } from "./collectionState";
+import { recordMetaThrottle } from "./metaThrottle";
 
 const GRAPH_API_VERSION = "v21.0";
 const MAX_PAGES = 10;
@@ -161,6 +162,9 @@ export async function fetchMetaInsights(
   try {
     for (let page = 0; page < MAX_PAGES && url; page += 1) {
       const response = await fetch(url);
+      // Registra a cota consumida antes de tratar erro - o cabecalho vem junto mesmo
+      // na resposta de falha, e e ai que ele mais importa.
+      recordMetaThrottle(response, accountId);
       const body = (await response.json()) as MetaApiResponse;
 
       if (!response.ok || body.error) {

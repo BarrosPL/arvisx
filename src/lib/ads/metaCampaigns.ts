@@ -1,6 +1,7 @@
 import type { CampaignCollectionResult, NormalizedCampaignRow, PlatformCredential } from "./types";
 import { classifyCollectionError, classifyRows } from "./collectionState";
 import { resolveResultMetric, type MetaActionEntry } from "./resultMetric";
+import { recordMetaThrottle } from "./metaThrottle";
 
 const GRAPH_API_VERSION = "v21.0";
 /** Bem menor que o MAX_PAGES=10 usado na coleta por anuncio: uma conta tem ordens de
@@ -43,11 +44,14 @@ function accountId(credential: PlatformCredential): string {
     : `act_${credential.externalAccountId}`;
 }
 
-async function fetchPaged<T>(startUrl: string): Promise<T[]> {
+async function fetchPaged<T>(startUrl: string, accountKey: string): Promise<T[]> {
   const rows: T[] = [];
   let url = startUrl;
   for (let page = 0; page < MAX_PAGES && url; page += 1) {
     const response = await fetch(url);
+    // Registra a cota consumida antes de qualquer coisa - vale mesmo quando a resposta
+    // e um erro (o cabecalho vem junto, e e justamente quando mais importa saber).
+    recordMetaThrottle(response, accountKey);
     const body = (await response.json()) as MetaApiResponse<T>;
     if (!response.ok || body.error) {
       throw new Error(
@@ -79,9 +83,18 @@ export async function fetchMetaCampaignInsights(
   const token = encodeURIComponent(credential.accessToken);
 
   try {
+    // effective_status filtra no SERVIDOR da Meta: campanha arquivada/excluida nunca
+    // chega a trafegar. A documentacao recomenda explicitamente so consultar objetos
+    // que interessam em vez de varrer a conta inteira - com dezenas de contas a cada
+    // 15min, isso e boa parte do volume que levou ao "code -1".
+    // IN_PROCESS/WITH_ISSUES entram de proposito: sao campanhas que o gestor precisa
+    // ver justamente porque tem algo errado - filtrar so ACTIVE/PAUSED as esconderia.
+    const statusFilter = encodeURIComponent(JSON.stringify(["ACTIVE", "PAUSED", "IN_PROCESS", "WITH_ISSUES"]));
     const campaigns = await fetchPaged<MetaCampaignRow>(
       `https://graph.facebook.com/${GRAPH_API_VERSION}/${account}/campaigns` +
-        `?limit=${PAGE_LIMIT}&fields=id,name,status,effective_status,objective&access_token=${token}`
+        `?limit=${PAGE_LIMIT}&effective_status=${statusFilter}` +
+        `&fields=id,name,status,effective_status,objective&access_token=${token}`,
+      account
     );
 
     const insightFields = [
@@ -100,7 +113,8 @@ export async function fetchMetaCampaignInsights(
 
     const insights = await fetchPaged<MetaCampaignInsightRow>(
       `https://graph.facebook.com/${GRAPH_API_VERSION}/${account}/insights` +
-        `?level=campaign&limit=${PAGE_LIMIT}&date_preset=${datePreset}&fields=${insightFields}&access_token=${token}`
+        `?level=campaign&limit=${PAGE_LIMIT}&date_preset=${datePreset}&fields=${insightFields}&access_token=${token}`,
+      account
     );
 
     const insightsByCampaign = new Map<string, MetaCampaignInsightRow>();
