@@ -5,21 +5,21 @@ import type { LibraryCollectionResult, PlatformCredential } from "./types";
 import type { CollectSummary } from "./collect";
 
 /**
- * Espelha collectForBrand (lib/ads/collect.ts) mas para a Biblioteca de anuncios:
+ * Espelha collectAdMetricsForAccount (lib/ads/collect.ts) mas para a Biblioteca de anuncios:
  * diferente da metrica (que acumula historico), aqui cada sincronizacao so atualiza o
  * estado atual de cada criativo - upsert por (credentialId, platformAdId) em vez de
  * inserir linha nova. Nao mexe em AdCredential.status/lastError de proposito - quem
- * ja e dono desse campo e collectForBrand (metricas), rodado sempre junto; duas
+ * ja e dono desse campo e collectAdMetricsForAccount (metricas), rodado sempre junto; duas
  * funcoes escrevendo no mesmo campo do credential na mesma rodada só criaria corrida
  * entre elas.
  */
-export async function collectAdLibraryForBrand(
-  brandId: string,
+export async function collectAdLibraryForAccount(
+  credentialId: string,
   platform: Platform,
   fetcher: (credential: PlatformCredential) => Promise<LibraryCollectionResult>
 ): Promise<CollectSummary[]> {
   const credentials = await prisma.adCredential.findMany({
-    where: { brandId, platform },
+    where: { id: credentialId, platform },
     include: { providerConnection: true },
   });
   const summaries: CollectSummary[] = [];
@@ -34,7 +34,6 @@ export async function collectAdLibraryForBrand(
           prisma.adCreative.upsert({
             where: { credentialId_platformAdId: { credentialId: record.id, platformAdId: row.platformAdId } },
             update: {
-              brandId,
               platform,
               platformCampaignId: row.platformCampaignId,
               campaignName: row.campaignName,
@@ -48,7 +47,6 @@ export async function collectAdLibraryForBrand(
               collectedAt: new Date(),
             },
             create: {
-              brandId,
               credentialId: record.id,
               platform,
               platformAdId: row.platformAdId,

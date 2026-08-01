@@ -1,17 +1,17 @@
 import { prisma } from "@/lib/prisma";
-import { collectAllCampaignsForBrand } from "@/lib/ads/collectCampaigns";
+import { collectAllCampaignsForAccount } from "@/lib/ads/collectCampaigns";
 
 let isRunning = false;
 
-/** Pausa entre marcas - ver comentario no laco de runCollectRound. */
-const BRAND_DELAY_MS = 750;
+/** Pausa entre contas - ver comentario no laco de runCollectRound. */
+const ACCOUNT_DELAY_MS = 750;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export interface CollectRoundResult {
-  brands: number;
+  accounts: number;
   credentials: number;
   errors: number;
   skipped: boolean;
@@ -26,7 +26,7 @@ export interface CollectRoundResult {
  * encurtar a rodada unica de 6h pra 15min multiplicaria custo de OpenAI e criacao de
  * proposta por 24, sem nenhum ganho (o que o usuario queria era so dado fresco na tela).
  *
- * Marcas sao percorridas SEQUENCIALMENTE de proposito - disparar as ~27 contas em
+ * Contas sao percorridas SEQUENCIALMENTE de proposito - disparar as ~27 contas em
  * paralelo a cada 15min foi o que fez a Meta devolver erro de excesso de requisicao
  * (code -1) na tentativa anterior de leitura ao vivo.
  */
@@ -34,36 +34,33 @@ export async function runCollectRound(): Promise<CollectRoundResult> {
   if (isRunning) {
     // Coleta anterior ainda rodando (mais lenta que o intervalo) - pular esta em vez de
     // empilhar duas em cima da mesma conta.
-    return { brands: 0, credentials: 0, errors: 0, skipped: true };
+    return { accounts: 0, credentials: 0, errors: 0, skipped: true };
   }
   isRunning = true;
 
   try {
-    const brands = await prisma.brand.findMany({
-      where: {
-        // So marca com credencial que ainda autentica. Credencial em AUTH_ERROR ia
-        // falhar de novo a cada 15min, gastando chamada e tempo a toa - volta sozinha
-        // pro ciclo quando a rodada de analise (6h) ou uma reconexao consertar o status.
-        credentials: { some: { status: { not: "AUTH_ERROR" } } },
-      },
-      orderBy: { priorityOrder: "asc" },
+    const accounts = await prisma.adCredential.findMany({
+      // Credencial em AUTH_ERROR ia falhar de novo a cada 15min, gastando chamada e
+      // tempo a toa - volta sozinha pro ciclo quando uma reconexao consertar o status.
+      where: { status: { not: "AUTH_ERROR" } },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
 
     let credentials = 0;
     let errors = 0;
 
-    for (const brand of brands) {
-      const summaries = await collectAllCampaignsForBrand(brand.id);
+    for (const account of accounts) {
+      const summaries = await collectAllCampaignsForAccount(account.id);
       credentials += summaries.length;
       errors += summaries.filter((s) => s.state === "AUTH_ERROR" || s.state === "API_ERROR").length;
-      // Respiro entre marcas: o processo do servidor web e o mesmo que roda isto, e
+      // Respiro entre contas: o processo do servidor web e o mesmo que roda isto, e
       // dezenas de contas em sequencia sem pausa deixavam a navegacao travada. Tambem
       // espaca as chamadas, o que e o que evita a plataforma recusar por excesso.
-      await sleep(BRAND_DELAY_MS);
+      await sleep(ACCOUNT_DELAY_MS);
     }
 
-    return { brands: brands.length, credentials, errors, skipped: false };
+    return { accounts: accounts.length, credentials, errors, skipped: false };
   } finally {
     isRunning = false;
   }

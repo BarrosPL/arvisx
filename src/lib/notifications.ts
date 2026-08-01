@@ -37,10 +37,10 @@ function firstRecommendedReason(recommendedActionsJson: unknown): string | undef
  * NEW_CAMPAIGN, isso é resolvido dentro da própria conversa, não aqui.
  */
 export async function getAttentionItems(userId: string): Promise<AttentionEntry[]> {
-  const [brands, latestRun] = await Promise.all([
-    prisma.brand.findMany({
-      where: { brandAccess: { some: { userId } } },
-      orderBy: { priorityOrder: "asc" },
+  const [accounts, latestRun] = await Promise.all([
+    prisma.adCredential.findMany({
+      where: { providerConnection: { userId } },
+      orderBy: { createdAt: "asc" },
       include: {
         rankingSnapshots: { orderBy: { computedAt: "desc" }, take: 1 },
         proposals: {
@@ -52,21 +52,29 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
     }),
     prisma.schedulerRun.findFirst({
       orderBy: { startedAt: "desc" },
-      include: { brandResults: { include: { brand: { select: { id: true, name: true, slug: true } } } } },
+      include: {
+        accountResults: {
+          include: { credential: { select: { id: true, label: true, externalAccountId: true } } },
+        },
+      },
     }),
   ]);
 
+  const accountName = (account: { label: string | null; externalAccountId: string }) =>
+    account.label ?? account.externalAccountId;
+
   const items: AttentionEntry[] = [];
 
-  for (const brand of brands) {
-    for (const proposal of brand.proposals) {
+  for (const account of accounts) {
+    const name = accountName(account);
+    for (const proposal of account.proposals) {
       if (proposal.status === "EXECUTION_FAILED") {
         items.push({
           key: `exec-${proposal.id}`,
           tone: "danger",
           title: `Falha ao executar: ${proposal.title}`,
-          description: proposal.executions[0]?.errorMessage ? `${brand.name} · ${proposal.executions[0].errorMessage}` : brand.name,
-          prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) falhou?`,
+          description: proposal.executions[0]?.errorMessage ? `${name} · ${proposal.executions[0].errorMessage}` : name,
+          prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}) falhou?`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });
@@ -75,8 +83,8 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           key: `data-${proposal.id}`,
           tone: "warning",
           title: `Precisa de mais dados: ${proposal.title}`,
-          description: brand.name,
-          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}) que está aguardando dado.`,
+          description: name,
+          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}) que está aguardando dado.`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });
@@ -85,8 +93,8 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           key: `proposal-${proposal.id}`,
           tone: "info",
           title: proposal.title,
-          description: brand.name,
-          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, marca: ${brand.name}).`,
+          description: name,
+          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}).`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });
@@ -95,30 +103,32 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
   }
 
   if (latestRun) {
-    for (const result of latestRun.brandResults) {
+    for (const result of latestRun.accountResults) {
       if (result.outcome === "error") {
+        const name = accountName(result.credential);
         items.push({
           key: `run-${result.id}`,
           tone: "danger",
-          title: `Falha na última análise de ${result.brand.name}`,
+          title: `Falha na última análise de ${name}`,
           description: result.errorMessage ?? undefined,
-          prefill: `Por que a última análise da marca ${result.brand.name} falhou?`,
+          prefill: `Por que a última análise da conta ${name} falhou?`,
           createdAt: latestRun.startedAt,
         });
       }
     }
   }
 
-  for (const brand of brands) {
-    const snapshot = brand.rankingSnapshots[0];
+  for (const account of accounts) {
+    const snapshot = account.rankingSnapshots[0];
     if (snapshot?.verdict === "RUIM") {
+      const name = accountName(account);
       const reason = firstRecommendedReason(snapshot.recommendedActionsJson);
       items.push({
-        key: `verdict-${brand.id}`,
+        key: `verdict-${account.id}`,
         tone: "warning",
-        title: `${brand.name} precisa de atenção`,
+        title: `${name} precisa de atenção`,
         description: reason ? `Diagnóstico: ${reason}` : undefined,
-        prefill: `Por que a marca ${brand.name} está com diagnóstico ruim? O que você recomenda?`,
+        prefill: `Por que a conta ${name} está com diagnóstico ruim? O que você recomenda?`,
         createdAt: snapshot.computedAt,
       });
     }

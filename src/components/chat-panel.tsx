@@ -6,7 +6,6 @@ import { ChevronDown, ChevronRight, Send, Sparkles, Wrench, X } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { BrandAvatar } from "@/components/brand-avatar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -17,9 +16,8 @@ export interface ChatMessageView {
   role: MessageRole;
   content: string;
   toolName: string | null;
-  brandId: string | null;
-  brandName: string | null;
-  brandSlug: string | null;
+  accountId: string | null;
+  accountName: string | null;
   createdAt: string;
 }
 
@@ -43,7 +41,7 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 const SUGGESTED_QUESTIONS = [
-  "Analise o desempenho das minhas marcas.",
+  "Analise o desempenho das minhas contas.",
   "Onde estou desperdiçando verba?",
   "Quais campanhas precisam de atenção?",
   "Crie uma proposta de otimização.",
@@ -118,18 +116,17 @@ function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: s
 }
 
 interface CreatedProposalInfo {
-  brandSlug: string | null;
-  brandName: string | null;
+  accountName: string | null;
 }
 
-/** A proposta pode ter sido criada pra qualquer marca do turno - resolve a marca a
+/** A proposta pode ter sido criada pra qualquer conta do turno - resolve a conta a
  * partir da mensagem de tool especifica que chamou propose_action, nunca de um
- * contexto fixo (o turno pode ter tocado varias marcas). */
+ * contexto fixo (o turno pode ter tocado varias contas). */
 function createdProposalInfo(tools: ChatMessageView[]): CreatedProposalInfo | null {
   for (const tool of tools) {
     if (tool.toolName !== "propose_action" && tool.toolName !== "confirm_and_execute_action") continue;
     const parsed = parseToolContent(tool);
-    if (parsed?.proposalId) return { brandSlug: tool.brandSlug, brandName: tool.brandName };
+    if (parsed?.proposalId) return { accountName: tool.accountName };
   }
   return null;
 }
@@ -182,7 +179,7 @@ function ToolStepsGroup({ tools }: { tools: ChatMessageView[] }) {
         <div className="flex flex-col gap-1 border-l pl-3">
           {tools.map((tool) => (
             <span key={tool.id} className="text-xs text-muted-foreground">
-              {tool.brandName ? `${tool.brandName} · ` : ""}
+              {tool.accountName ? `${tool.accountName} · ` : ""}
               {toolSummary(tool)}
             </span>
           ))}
@@ -404,23 +401,20 @@ export function ChatPanel({
           return (
             <div key={item.message.id} className="flex flex-col gap-1.5 self-start">
               {item.tools.length > 0 ? <ToolStepsGroup tools={item.tools} /> : null}
-              {item.message.brandName ? (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <BrandAvatar name={item.message.brandName} seed={item.message.brandId ?? item.message.brandName} size="xs" />
-                  {item.message.brandName}
-                </span>
+              {item.message.accountName ? (
+                <span className="text-xs text-muted-foreground">{item.message.accountName}</span>
               ) : null}
               <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
                 {item.message.content}
               </div>
               {pendingAsset ? <ChatCreativeAssetUpload proposalId={pendingAsset.proposalId} /> : null}
-              {proposalInfo?.brandSlug ? (
+              {proposalInfo ? (
                 <Link
-                  href={`/brands/${proposalInfo.brandSlug}/proposals`}
+                  href="/proposals"
                   className="flex w-fit items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/10"
                 >
                   <Sparkles className="size-3" />
-                  Proposta criada{proposalInfo.brandName ? ` em ${proposalInfo.brandName}` : ""} — ver na fila
+                  Proposta criada{proposalInfo.accountName ? ` em ${proposalInfo.accountName}` : ""} — ver na fila
                 </Link>
               ) : null}
             </div>

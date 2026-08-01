@@ -3,12 +3,9 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ChevronDown, ChevronUp, RefreshCw, Search, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PlatformIconTile } from "@/components/brand-marks";
-import { BrandAvatar } from "@/components/brand-avatar";
-import { BrandCombobox, type BrandComboboxOption } from "@/components/brand-combobox";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
 import { formatDateTime } from "@/lib/format";
 
@@ -22,17 +19,19 @@ export interface ConnectionItem {
   status: Status;
   lastCheckedAt: string | null;
   lastError: string | null;
-  assignmentsCount: number;
+  /** Contas de anuncio que entraram no sistema a partir deste login. */
+  accountsCount: number;
 }
-
-export type BrandOption = BrandComboboxOption;
 
 interface DiscoveredAccount {
   externalAccountId: string;
   label: string;
   loginCustomerId: string | null;
-  assignedBrand: { id: string; name: string } | null;
-  assignedViaOtherConnection: boolean;
+  /** Preenchido quando a conta ja esta registrada no sistema. */
+  credentialId: string | null;
+  status: Status | null;
+  /** Ja registrada por outro login - por isso nao aparece como desta conexao. */
+  registeredViaOtherConnection: boolean;
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -85,8 +84,7 @@ function PlatformStatusTile({
           <span className="text-xs text-muted-foreground">Nenhum login conectado ainda</span>
         ) : (
           <span className="truncate text-xs text-muted-foreground">
-            Não configurado — redirect URI:{" "}
-            <code className="rounded bg-muted px-1">{redirectUri}</code>
+            Não configurado — redirect URI: <code className="rounded bg-muted px-1">{redirectUri}</code>
           </span>
         )}
       </div>
@@ -105,89 +103,29 @@ function PlatformStatusTile({
   );
 }
 
-function AccountRow({
-  connectionId,
-  account,
-  brands,
-  onAssignmentChange,
-}: {
-  connectionId: string;
-  account: DiscoveredAccount;
-  brands: BrandOption[];
-  onAssignmentChange: (externalAccountId: string, assignedBrand: { id: string; name: string } | null) => void;
-}) {
-  const [isSaving, setIsSaving] = useState(false);
-
-  async function handleChange(brandId: string | null) {
-    setIsSaving(true);
-    try {
-      const response = !brandId
-        ? await fetch(`/api/connections/${connectionId}/assign`, {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ externalAccountId: account.externalAccountId }),
-          })
-        : await fetch(`/api/connections/${connectionId}/assign`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              externalAccountId: account.externalAccountId,
-              brandId,
-              label: account.label,
-              loginCustomerId: account.loginCustomerId ?? undefined,
-            }),
-          });
-
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(body.error ?? "Falha ao atualizar a atribuição.");
-        return;
-      }
-
-      const brand = brandId ? (brands.find((b) => b.id === brandId) ?? null) : null;
-      onAssignmentChange(account.externalAccountId, brand);
-
-      if (brandId) {
-        const summary = body.collectSummary as { rowCount: number; state: string } | null | undefined;
-        toast.success(
-          summary
-            ? `Conta atribuída a ${brand?.name ?? "marca"} — ${summary.rowCount} anúncio(s) sincronizado(s).`
-            : `Conta atribuída a ${brand?.name ?? "marca"} — sincronização inicial falhou, mas vai tentar de novo sozinha em breve.`
-        );
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
+/** Linha SÓ DE LEITURA de uma conta descoberta. Não há mais escolha a fazer aqui: toda
+ * conta visível no login entra no sistema automaticamente (ver
+ * lib/accounts/autoProvision.ts) - esta lista só mostra o que entrou. */
+function AccountRow({ account }: { account: DiscoveredAccount }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3 text-sm">
+    <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
       <div className="flex min-w-0 flex-col">
-        <span className="truncate font-medium">{account.label}</span>
+        <span className="truncate text-sm">{account.label}</span>
         <span className="truncate text-xs text-muted-foreground">
           {account.externalAccountId}
-          {account.assignedViaOtherConnection ? " · atribuída via outra conexão" : ""}
+          {account.registeredViaOtherConnection ? " · já registrada por outro login" : ""}
         </span>
       </div>
-      <BrandCombobox
-        brands={brands}
-        value={account.assignedBrand?.id ?? null}
-        onSelect={handleChange}
-        disabled={isSaving}
+      <StatusBadge
+        tone={account.credentialId ? STATUS_TONE[account.status ?? "CONNECTED"] : "neutral"}
+        label={account.credentialId ? STATUS_LABEL[account.status ?? "CONNECTED"] : "Não registrada"}
+        className="shrink-0"
       />
     </div>
   );
 }
 
-function ConnectionCard({
-  connection,
-  brands,
-  onRefresh,
-}: {
-  connection: ConnectionItem;
-  brands: BrandOption[];
-  onRefresh: () => void;
-}) {
+function ConnectionCard({ connection, onRefresh }: { connection: ConnectionItem; onRefresh: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [accounts, setAccounts] = useState<DiscoveredAccount[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -200,28 +138,9 @@ function ConnectionCard({
     const query = normalizeText(search.trim());
     if (!query) return accounts;
     return accounts.filter(
-      (account) =>
-        normalizeText(account.label).includes(query) || account.externalAccountId.includes(query)
+      (account) => normalizeText(account.label).includes(query) || account.externalAccountId.includes(query)
     );
   }, [accounts, search]);
-
-  const unassignedAccounts = useMemo(
-    () => filteredAccounts?.filter((account) => !account.assignedBrand) ?? [],
-    [filteredAccounts]
-  );
-
-  const assignedGroups = useMemo(() => {
-    const groups = new Map<string, { brand: { id: string; name: string }; accounts: DiscoveredAccount[] }>();
-    for (const account of filteredAccounts ?? []) {
-      if (!account.assignedBrand) continue;
-      const key = account.assignedBrand.id;
-      if (!groups.has(key)) {
-        groups.set(key, { brand: account.assignedBrand, accounts: [] });
-      }
-      groups.get(key)!.accounts.push(account);
-    }
-    return Array.from(groups.values());
-  }, [filteredAccounts]);
 
   async function loadAccounts() {
     setIsLoadingAccounts(true);
@@ -245,24 +164,6 @@ function ConnectionCard({
     if (next && accounts === null) {
       await loadAccounts();
     }
-  }
-
-  /**
-   * Atualiza so a linha da conta afetada com o resultado ja conhecido da chamada de
-   * assign/unassign, em vez de recarregar a lista inteira - recarregar mostrava
-   * "Carregando contas..." e fazia a lista toda desaparecer/reaparecer a cada atribuicao.
-   */
-  function handleAssignmentChange(externalAccountId: string, assignedBrand: { id: string; name: string } | null) {
-    setAccounts((prev) =>
-      prev
-        ? prev.map((account) =>
-            account.externalAccountId === externalAccountId
-              ? { ...account, assignedBrand, assignedViaOtherConnection: false }
-              : account
-          )
-        : prev
-    );
-    onRefresh();
   }
 
   async function handleHealthCheck() {
@@ -291,13 +192,11 @@ function ConnectionCard({
         <PlatformIconTile platform={connection.platform} />
         <div className="flex flex-1 flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate font-medium">
-              {connection.label ?? PLATFORM_LABEL[connection.platform]}
-            </span>
+            <span className="truncate font-medium">{connection.label ?? PLATFORM_LABEL[connection.platform]}</span>
             <StatusBadge tone={STATUS_TONE[connection.status]} label={STATUS_LABEL[connection.status]} />
           </div>
           <span className="truncate text-xs text-muted-foreground">
-            {connection.assignmentsCount} conta(s) atribuída(s) · última checagem:{" "}
+            {connection.accountsCount} conta(s) de anúncio · última checagem:{" "}
             {connection.lastCheckedAt ? formatDateTime(new Date(connection.lastCheckedAt)) : "nunca"}
           </span>
           {connection.lastError ? (
@@ -352,45 +251,15 @@ function ConnectionCard({
                   className="pl-8"
                 />
               </div>
-
-              {unassignedAccounts.length > 0 ? (
+              {filteredAccounts && filteredAccounts.length > 0 ? (
                 <div className="flex flex-col gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Não foi possível criar marca automaticamente ({unassignedAccounts.length}) — escolha manualmente
-                  </span>
-                  {unassignedAccounts.map((account) => (
-                    <AccountRow
-                      key={account.externalAccountId}
-                      connectionId={connection.id}
-                      account={account}
-                      brands={brands}
-                      onAssignmentChange={handleAssignmentChange}
-                    />
+                  {filteredAccounts.map((account) => (
+                    <AccountRow key={account.externalAccountId} account={account} />
                   ))}
                 </div>
-              ) : null}
-
-              {assignedGroups.map(({ brand, accounts: brandAccounts }) => (
-                <div key={brand.id} className="flex flex-col gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <BrandAvatar name={brand.name} seed={brand.id} size="xs" />
-                    Atribuídas a {brand.name} ({brandAccounts.length})
-                  </span>
-                  {brandAccounts.map((account) => (
-                    <AccountRow
-                      key={account.externalAccountId}
-                      connectionId={connection.id}
-                      account={account}
-                      brands={brands}
-                      onAssignmentChange={handleAssignmentChange}
-                    />
-                  ))}
-                </div>
-              ))}
-
-              {unassignedAccounts.length === 0 && assignedGroups.length === 0 ? (
+              ) : (
                 <p className="text-sm text-muted-foreground">Nenhuma conta encontrada para essa busca.</p>
-              ) : null}
+              )}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma conta encontrada para este login.</p>
@@ -403,7 +272,6 @@ function ConnectionCard({
 
 export function ConnectionsManager({
   initialConnections,
-  brands,
   metaConfigured,
   googleConfigured,
   metaRedirectUri,
@@ -411,7 +279,6 @@ export function ConnectionsManager({
   oauthError,
 }: {
   initialConnections: ConnectionItem[];
-  brands: BrandOption[];
   metaConfigured: boolean;
   googleConfigured: boolean;
   metaRedirectUri: string;
@@ -426,14 +293,27 @@ export function ConnectionsManager({
   return (
     <div className="flex flex-col gap-6">
       {oauthError ? (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
+        <p
+          className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
           {oauthError}
         </p>
       ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <PlatformStatusTile platform="META" connected={metaConnected} configured={metaConfigured} redirectUri={metaRedirectUri} />
-        <PlatformStatusTile platform="GOOGLE" connected={googleConnected} configured={googleConfigured} redirectUri={googleRedirectUri} />
+        <PlatformStatusTile
+          platform="META"
+          connected={metaConnected}
+          configured={metaConfigured}
+          redirectUri={metaRedirectUri}
+        />
+        <PlatformStatusTile
+          platform="GOOGLE"
+          connected={googleConnected}
+          configured={googleConfigured}
+          redirectUri={googleRedirectUri}
+        />
       </div>
 
       <div className="flex flex-col gap-3">
@@ -441,12 +321,7 @@ export function ConnectionsManager({
           <p className="text-sm text-muted-foreground">Nenhum login conectado ainda.</p>
         ) : (
           initialConnections.map((connection) => (
-            <ConnectionCard
-              key={connection.id}
-              connection={connection}
-              brands={brands}
-              onRefresh={() => router.refresh()}
-            />
+            <ConnectionCard key={connection.id} connection={connection} onRefresh={() => router.refresh()} />
           ))
         )}
       </div>

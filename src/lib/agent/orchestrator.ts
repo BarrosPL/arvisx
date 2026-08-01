@@ -2,7 +2,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { prisma } from "@/lib/prisma";
 import { openai, AGENT_MODEL } from "@/lib/openai";
 import { buildUserScopedSystemPrompt } from "@/lib/agent/persona";
-import { TOOL_DEFS_CHAT, dispatchChatTool, extractBrandIdFromArgs, type ChatToolContext } from "@/lib/agent/tools";
+import { TOOL_DEFS_CHAT, dispatchChatTool, extractAccountIdFromArgs, type ChatToolContext } from "@/lib/agent/tools";
 import type { Message } from "@/generated/prisma/client";
 
 const MAX_ITERATIONS = 8;
@@ -45,15 +45,12 @@ function mapHistoryToOpenAi(messages: Message[]): ChatCompletionMessageParam[] {
  * tool-calling (cada chamada escolhe/valida sua propria marca) -> resposta final.
  * Toda saida do fluxo grava uma Message(ASSISTANT) - nao existe caminho de silencio.
  *
- * Isolamento entre marcas: nao existe mais um "brandId" fixo pro turno inteiro (o
- * chat e por usuario, pode falar de varias marcas na mesma conversa/mensagem). A
- * garantia real - marca X nunca ve dado da marca Y - vem de dispatchChatTool validar
- * o brandId de CADA chamada contra a lista real de BrandAccess do usuario
- * (assertBrandAccess em agent/tools/index.ts) antes de ler/escrever qualquer coisa.
- * Isso e imposto em codigo, no ponto exato onde o dado e acessado - por isso o
- * bloqueio de topico por palavra-chave (lib/brands/firewall.ts) foi retirado deste
- * fluxo: ele nunca validou acesso a dado, so bloqueava topico, e discutir varias
- * marcas do proprio usuario na mesma conversa agora e o comportamento esperado.
+ * Isolamento entre contas: nao existe um "accountId" fixo pro turno inteiro (o chat e
+ * por usuario, pode falar de varias contas na mesma conversa/mensagem). A garantia real
+ * - conta X nunca ve dado da conta Y - vem de dispatchChatTool validar o accountId de
+ * CADA chamada contra a lista real de contas do usuario (assertAccountAccess em
+ * agent/tools/index.ts) antes de ler/escrever qualquer coisa. Isso e imposto em codigo,
+ * no ponto exato onde o dado e acessado.
  */
 export async function runAgentTurn(threadId: string, userText: string): Promise<Message[]> {
   const thread = await prisma.conversationThread.findUniqueOrThrow({
@@ -64,12 +61,12 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
     data: { threadId, role: "USER", content: userText },
   });
 
-  const brands = await prisma.brand.findMany({
-    where: { brandAccess: { some: { userId: thread.userId } } },
-    orderBy: { priorityOrder: "asc" },
-    select: { id: true, slug: true, name: true, status: true },
+  const accounts = await prisma.adCredential.findMany({
+    where: { providerConnection: { userId: thread.userId } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, label: true, platform: true, externalAccountId: true, status: true },
   });
-  const allowedBrandIds = new Set(brands.map((brand) => brand.id));
+  const allowedAccountIds = new Set(accounts.map((account) => account.id));
 
   const history = await prisma.message.findMany({
     where: { threadId },
@@ -77,13 +74,13 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
   });
 
   const openaiMessages: ChatCompletionMessageParam[] = [
-    { role: "system", content: buildUserScopedSystemPrompt(brands) },
+    { role: "system", content: buildUserScopedSystemPrompt(accounts) },
     ...mapHistoryToOpenAi(history.slice(-MAX_HISTORY_MESSAGES)),
   ];
 
   const toolMessages: Message[] = [];
-  const ctx: ChatToolContext = { userId: thread.userId, threadId, allowedBrandIds };
-  const turnBrandIds = new Set<string>();
+  const ctx: ChatToolContext = { userId: thread.userId, threadId, allowedAccountIds };
+  const turnAccountIds = new Set<string>();
   let finalText: string | null = null;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -105,8 +102,8 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
     for (const toolCall of message.tool_calls) {
       if (toolCall.type !== "function") continue;
 
-      const callBrandId = extractBrandIdFromArgs(toolCall.function.arguments);
-      if (callBrandId) turnBrandIds.add(callBrandId);
+      const callAccountId = extractAccountIdFromArgs(toolCall.function.arguments);
+      if (callAccountId) turnAccountIds.add(callAccountId);
 
       const result = await dispatchChatTool(toolCall.function.name, toolCall.function.arguments, ctx);
       const resultJson = JSON.parse(JSON.stringify(result));
@@ -114,7 +111,7 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
       const toolMessage = await prisma.message.create({
         data: {
           threadId,
-          brandId: callBrandId,
+          credentialId: callAccountId,
           role: "TOOL",
           content: JSON.stringify(result),
           toolName: toolCall.function.name,
@@ -137,7 +134,7 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
   const assistantMessage = await prisma.message.create({
     data: {
       threadId,
-      brandId: turnBrandIds.size === 1 ? [...turnBrandIds][0] : null,
+      credentialId: turnAccountIds.size === 1 ? [...turnAccountIds][0] : null,
       role: "ASSISTANT",
       content: finalText,
     },
@@ -153,32 +150,32 @@ export interface ChatMessageView {
   role: string;
   content: string;
   toolName: string | null;
-  brandId: string | null;
-  brandName: string | null;
-  brandSlug: string | null;
+  accountId: string | null;
+  accountName: string | null;
   createdAt: string;
 }
 
-/** Denormaliza nome/slug da marca em cada mensagem (quando houver brandId) pra UI
- * mostrar de qual marca um turno tratava, e pra montar links (ex: "ver proposta")
- * sem precisar de mais uma chamada do client. */
+/** Denormaliza o nome da conta em cada mensagem (quando houver) pra UI mostrar de qual
+ * conta de anuncio um turno tratava, sem precisar de mais uma chamada do client. */
 export async function toChatMessageViews(messages: Message[]): Promise<ChatMessageView[]> {
-  const brandIds = [...new Set(messages.map((m) => m.brandId).filter((id): id is string => id !== null))];
-  const brands = brandIds.length
-    ? await prisma.brand.findMany({ where: { id: { in: brandIds } }, select: { id: true, name: true, slug: true } })
+  const accountIds = [...new Set(messages.map((m) => m.credentialId).filter((id): id is string => id !== null))];
+  const accounts = accountIds.length
+    ? await prisma.adCredential.findMany({
+        where: { id: { in: accountIds } },
+        select: { id: true, label: true, externalAccountId: true },
+      })
     : [];
-  const brandById = new Map(brands.map((b) => [b.id, b]));
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   return messages.map((message) => {
-    const brand = message.brandId ? brandById.get(message.brandId) : undefined;
+    const account = message.credentialId ? accountById.get(message.credentialId) : undefined;
     return {
       id: message.id,
       role: message.role,
       content: message.content,
       toolName: message.toolName,
-      brandId: message.brandId,
-      brandName: brand?.name ?? null,
-      brandSlug: brand?.slug ?? null,
+      accountId: message.credentialId,
+      accountName: account ? (account.label ?? account.externalAccountId) : null,
       createdAt: message.createdAt.toISOString(),
     };
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ProposalCard, type ProposalView, type ProposalBrandView } from "@/components/proposal-card";
+import { ProposalCard, type ProposalView, type ProposalAccountView } from "@/components/proposal-card";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 
@@ -28,12 +28,11 @@ const DEFAULT_PRIORITY = ["failed", "awaiting", "adjust", "test", "approved", "h
  * so reorganiza a apresentacao. ProposalCard é só leitura (histórico/auditoria) -
  * decisão/execução acontece conversando com a JAMILE, não mais aqui.
  *
- * `brand` por item (em vez de um so pro board inteiro) - a pagina por marca passa
- * cada proposta sem `brand` (ProposalCard so mostra o chip quando presente, igual
- * sempre foi); a pagina cross-marca (src/app/(app)/proposals/page.tsx) preenche o
- * brand de cada proposta, ja que o board mistura marcas diferentes.
+ * `account` por item: a pagina de propostas mistura contas de anuncio diferentes,
+ * entao cada proposta carrega o nome da conta a que pertence (ProposalCard so mostra
+ * quando presente).
  */
-export function ProposalsBoard({ proposals }: { proposals: (ProposalView & { brand?: ProposalBrandView })[] }) {
+export function ProposalsBoard({ proposals }: { proposals: (ProposalView & { account?: ProposalAccountView })[] }) {
   const countByGroup = new Map(
     GROUPS.map((group) => [group.key, proposals.filter((p) => group.statuses.includes(p.status)).length])
   );
@@ -79,12 +78,12 @@ export function ProposalsBoard({ proposals }: { proposals: (ProposalView & { bra
       {filtered.length === 0 ? (
         <EmptyState
           title={`Nenhuma proposta em "${activeGroup.label}"`}
-          description="Novas propostas aparecem aqui automaticamente conforme a JAMILE analisa a marca."
+          description="Novas propostas aparecem aqui automaticamente conforme a JAMILE analisa suas contas."
         />
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((proposal) => (
-            <ProposalCard key={proposal.id} proposal={proposal} brand={proposal.brand} />
+            <ProposalCard key={proposal.id} proposal={proposal} account={proposal.account} />
           ))}
         </div>
       )}

@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 /**
  * Le uma proposta especifica pelo id - usado pela tool de chat get_proposal, quando o
  * usuario chega vindo de uma notificacao ou referencia uma proposta especifica na
- * conversa. Confere que a proposta realmente pertence a brandId informado (nao confia
+ * conversa. Confere que a proposta realmente pertence a credentialId informado (nao confia
  * so no acesso a marca - a proposta podia ser de outra) antes de devolver qualquer dado.
  */
-export async function getProposal(brandId: string, proposalId: string) {
+export async function getProposal(credentialId: string, proposalId: string) {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  if (proposal.brandId !== brandId) {
+  if (proposal.credentialId !== credentialId) {
     throw new Error("Essa proposta não pertence à marca informada.");
   }
 

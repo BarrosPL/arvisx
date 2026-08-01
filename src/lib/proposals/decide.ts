@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { requireBrandAccess, assertBrandRole } from "@/lib/session";
+import { requireAccountAccess, assertAccountAccess } from "@/lib/session";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
 import { evaluateProposalReadiness } from "@/lib/proposals/dataEnforcement";
 
 /**
  * Nucleo da decisao de uma proposta (approve/reject/test/adjust-so-nota): carrega a
- * proposta, exige papel MANAGER na marca dela (via userId explicito, nao sessao HTTP -
+ * proposta, confere que a conta dela e do usuario (via userId explicito, nao sessao HTTP -
  * reutilizavel tanto pelas rotas REST quanto pela tool de chat decide_proposal), valida
  * a transicao de estado (lib/proposals/lifecycle.ts) e so entao grava a decisao com quem
  * decidiu e quando.
@@ -17,7 +17,7 @@ export async function decideProposalAsUser(
   note: string | null
 ) {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  await assertBrandRole(userId, proposal.brandId, "MANAGER");
+  await assertAccountAccess(userId, proposal.credentialId);
 
   assertProposalTransition(proposal.status as ProposalStatus, targetStatus);
 
@@ -35,7 +35,7 @@ export async function decideProposalAsUser(
 /** Caminho usado pelas rotas REST (approve/reject/test/adjust) - resolve o usuario da sessao HTTP. */
 export async function decideProposal(proposalId: string, targetStatus: ProposalStatus, note: string | null) {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  const { user } = await requireBrandAccess(proposal.brandId, "MANAGER");
+  const { user } = await requireAccountAccess(proposal.credentialId);
   return decideProposalAsUser(user.id, proposalId, targetStatus, note);
 }
 
@@ -76,7 +76,7 @@ export async function adjustProposalAsUser(
   note: string
 ) {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  await assertBrandRole(userId, proposal.brandId, "MANAGER");
+  await assertAccountAccess(userId, proposal.credentialId);
 
   const currentMetrics = (proposal.metricsJson as Record<string, unknown>) ?? {};
   const metricsJson = {

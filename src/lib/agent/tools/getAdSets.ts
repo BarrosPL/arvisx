@@ -9,10 +9,10 @@ import type { GetAdSetsArgs } from "@/lib/agent/schema";
  * sobre uma lista e pouco confiavel, e o get_metrics ainda por cima truncava pelo
  * limit sem avisar).
  */
-export async function getAdSets(brandId: string, args: GetAdSetsArgs) {
+export async function getAdSets(credentialId: string, args: GetAdSetsArgs) {
   const snapshots = await prisma.adMetricSnapshot.findMany({
     where: {
-      brandId,
+      credentialId,
       collectionState: "OK",
       ...(args.platform ? { platform: args.platform } : {}),
     },

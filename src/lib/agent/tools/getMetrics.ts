@@ -8,7 +8,7 @@ import { classifyFunnelStage } from "@/lib/ranking/funnel";
  * paramos de apagar (lib/ads/collect.ts), entao precisa de distinct pra nao repetir
  * o mesmo anuncio varias vezes.
  */
-export async function getMetrics(brandId: string, args: GetMetricsArgs) {
+export async function getMetrics(credentialId: string, args: GetMetricsArgs) {
   // Sem "take" aqui de proposito: "distinct" so garante 1 linha por anuncio dentro
   // do que a query varreu, entao aplicar o limite direto na query e so cortar
   // depois em JS e o unico jeito de saber o total real (totalCount) separado do
@@ -17,7 +17,7 @@ export async function getMetrics(brandId: string, args: GetMetricsArgs) {
   // tem no total" quando a marca tem mais anuncios que o limite.
   const snapshots = await prisma.adMetricSnapshot.findMany({
     where: {
-      brandId,
+      credentialId,
       ...(args.platform ? { platform: args.platform } : {}),
       ...(args.campaignId ? { platformCampaignId: args.campaignId } : {}),
       ...(args.adSetId ? { platformAdSetId: args.adSetId } : {}),

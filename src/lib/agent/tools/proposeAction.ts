@@ -3,7 +3,7 @@ import { evaluateProposalReadiness, deriveInitialStatus } from "@/lib/proposals/
 import type { ProposalPayload } from "@/lib/agent/schema";
 
 export interface ProposeActionContext {
-  brandId: string;
+  credentialId: string;
   /** Ausente quando a proposta vem de uma analise autonoma do scheduler, sem chat associado. */
   threadId?: string;
   /** Presente so quando chamado a partir de uma conversa real (chat) - vira createdByUserId,
@@ -29,7 +29,7 @@ export async function proposeAction(ctx: ProposeActionContext, payload: Proposal
 
   const proposal = await prisma.proposal.create({
     data: {
-      brandId: ctx.brandId,
+      credentialId: ctx.credentialId,
       threadId: ctx.threadId ?? null,
       createdByUserId: ctx.userId ?? null,
       type: payload.type,

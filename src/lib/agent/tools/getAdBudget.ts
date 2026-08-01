@@ -14,13 +14,13 @@ export interface GetAdBudgetArgs {
  * so leitura, nunca escreve nada. E o dado que faltava pra JAMILE propor um valor
  * de verba concreto (currentBudget/proposedBudget) em vez de so texto descritivo.
  */
-export async function getAdBudget(brandId: string, args: GetAdBudgetArgs) {
+export async function getAdBudget(credentialId: string, args: GetAdBudgetArgs) {
   const credentialRecord = await prisma.adCredential.findFirst({
-    where: { brandId, platform: args.platform },
+    where: { id: credentialId, platform: args.platform },
     include: { providerConnection: true },
   });
   if (!credentialRecord) {
-    return { error: "Nenhuma credencial dessa plataforma atribuida a esta marca." };
+    return { error: "Essa conta de anuncio nao e dessa plataforma." };
   }
   const credential = toPlatformCredential(credentialRecord);
 

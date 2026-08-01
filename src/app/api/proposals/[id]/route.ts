@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireBrandAccess } from "@/lib/session";
+import { requireAccountAccess } from "@/lib/session";
 import { handleApiError } from "@/lib/http";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
 import { deleteProposal } from "@/lib/proposals/deleteProposal";
@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id } });
-    const { user } = await requireBrandAccess(proposal.brandId, "MANAGER");
+    const { user } = await requireAccountAccess(proposal.credentialId);
 
     if (proposal.status !== "ADJUST") {
       throw new Error(`Só é possível editar propostas em "Ajustar" (está em ${proposal.status})`);

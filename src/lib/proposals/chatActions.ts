@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { assertBrandRole } from "@/lib/session";
+import { assertAccountAccess } from "@/lib/session";
 import { proposeAction } from "@/lib/agent/tools/proposeAction";
 import { decideProposalAsUser } from "@/lib/proposals/decide";
 import { executeProposal } from "@/lib/execution/executor";
@@ -20,12 +20,12 @@ const DECISION_STATUS = { approve: "APPROVED", reject: "REJECTED", test: "TEST" 
  */
 export async function confirmAndExecuteAction(
   userId: string,
-  ctx: { brandId: string; threadId?: string },
+  ctx: { accountId: string; threadId?: string },
   payload: ProposalPayload
 ) {
-  await assertBrandRole(userId, ctx.brandId, "MANAGER");
+  await assertAccountAccess(userId, ctx.accountId);
 
-  const created = await proposeAction({ brandId: ctx.brandId, threadId: ctx.threadId, userId }, payload);
+  const created = await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId, userId }, payload);
 
   if (created.status !== "PENDING") {
     return {
@@ -71,7 +71,7 @@ export async function resolveProposal(userId: string, proposalId: string, decisi
   // vai direto tentar executar de novo.
   const current = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
   if (current.status === targetStatus) {
-    await assertBrandRole(userId, current.brandId, "MANAGER");
+    await assertAccountAccess(userId, current.credentialId);
   } else {
     await decideProposalAsUser(userId, proposalId, targetStatus, note);
   }

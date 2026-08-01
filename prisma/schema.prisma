@@ -13,22 +13,6 @@ datasource db {
 
 // ---------- Enums ----------
 
-enum BrandStatus {
-  ONBOARDING
-  ACTIVE
-  PAUSED
-
-  @@schema("arvisx")
-}
-
-enum BrandRole {
-  OWNER
-  MANAGER
-  VIEWER
-
-  @@schema("arvisx")
-}
-
 enum Platform {
   META
   GOOGLE
@@ -129,9 +113,9 @@ model User {
   name               String?
   passwordHash       String
   image              String?
-  // Papel de sistema (nao confundir com BrandRole, que e por marca): controla acesso
-  // ao painel /admin. Ver policies de RLS na migration add_user_admin_rls - o Postgres
-  // reconfirma este campo direto do banco, nao confia so na checagem da aplicacao.
+  // Papel de sistema: controla acesso ao painel /admin. Ver policies de RLS na migration
+  // add_user_admin_rls - o Postgres reconfirma este campo direto do banco, nao confia so
+  // na checagem da aplicacao.
   role               SystemRole @default(USER)
   // Forca a tela de troca de senha antes de liberar o resto do app - usado quando um
   // admin cria a conta ou reseta a senha de alguem (nunca definido pelo proprio usuario).
@@ -142,7 +126,6 @@ model User {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  brandAccess         BrandAccess[]
   threads             ConversationThread[]
   decidedProposals    Proposal[]           @relation("ProposalDecidedBy")
   createdProposals    Proposal[]           @relation("ProposalCreatedBy")
@@ -152,52 +135,12 @@ model User {
   @@schema("arvisx")
 }
 
-model BrandAccess {
-  id        String    @id @default(cuid())
-  userId    String
-  brandId   String
-  role      BrandRole @default(VIEWER)
-  createdAt DateTime  @default(now())
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, brandId])
-  @@schema("arvisx")
-}
-
-model Brand {
-  id               String      @id @default(cuid())
-  slug             String      @unique // vne | renan | vdv | arvisx | nesso | alvance | psa
-  name             String
-  status           BrandStatus @default(ONBOARDING)
-  topicKeywords    String[] // palavras-chave permitidas (usadas pelo firewall)
-  excludedKeywords String[]    @default([]) // palavras-chave conhecidas de OUTRAS marcas
-  priorityOrder    Int         @default(0) // ordem da rodada proativa do scheduler
-  colorHex         String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-
-  brandAccess             BrandAccess[]
-  credentials             AdCredential[]
-  metricSnapshots         AdMetricSnapshot[]
-  campaignMetricSnapshots CampaignMetricSnapshot[]
-  rankingSnapshots        RankingSnapshot[]
-  messages                Message[]
-  proposals               Proposal[]
-  executionLogs           ExecutionLog[]
-  schedulerResults        SchedulerBrandResult[]
-  firewallLogs            FirewallLog[]
-  abTests                 AbTest[]
-  adCreatives             AdCreative[]
-
-  @@schema("arvisx")
-}
-
 /**
- * Um login OAuth (Meta ou Google Ads) de um usuario. Guardado uma unica vez por pessoa+plataforma,
- * nao por marca — conectar aqui descobre todas as contas de anuncio visiveis a esse login, que
- * depois sao atribuidas a marcas especificas via AdCredential.
+ * Um login OAuth (Meta ou Google Ads) de um usuario. Guardado uma unica vez por
+ * pessoa+plataforma — conectar aqui descobre automaticamente todas as contas de anuncio
+ * visiveis a esse login, e cada uma vira um AdCredential (nao ha passo manual de
+ * atribuicao). E a raiz de posse de todo o dado do sistema: usuario -> conexao -> conta
+ * de anuncio -> metricas/propostas/execucoes.
  */
 model ProviderConnection {
   id                    String           @id @default(cuid())
@@ -221,29 +164,41 @@ model ProviderConnection {
 }
 
 /**
- * Atribuicao de uma conta de anuncio (descoberta via ProviderConnection) a UMA marca.
- * `(platform, externalAccountId)` e unico globalmente: a mesma conta nunca pode estar
- * atribuida a duas marcas ao mesmo tempo — e o firewall de marca aplicado no banco.
+ * Uma CONTA DE ANUNCIO (Meta ad account / Google Ads customer). E a entidade principal
+ * do sistema: todo dado - metrica, proposta, execucao, ranking - pendura aqui.
+ * Antes existia um conceito de "Marca" no meio (conta era atribuida manualmente a uma
+ * marca, e a marca e que era dona do dado). Isso foi removido a pedido do Renan: era um
+ * passo manual que nao agregava nada (na pratica sempre foi 1 conta = 1 marca, criada
+ * automaticamente) e impedia o dado de aparecer no dashboard ate alguem atribuir.
+ * Posse/autorizacao: conta -> providerConnection -> userId. Nao ha mais papeis
+ * (VIEWER/MANAGER/OWNER) nem compartilhamento entre usuarios - quem conectou o login e
+ * o dono de tudo que veio dele.
+ * `(platform, externalAccountId)` continua unico globalmente: a mesma conta de anuncio
+ * nunca aparece duas vezes no sistema.
  */
 model AdCredential {
   id                   String           @id @default(cuid())
-  brandId              String
   providerConnectionId String
   platform             Platform
   externalAccountId    String // Meta ad account id / Google Ads customer id
   loginCustomerId      String? // Google Ads MCC login-customer-id, se aplicavel
-  label                String?
+  label                String? // nome da conta, vindo da descoberta - e o que a UI exibe
   status               CredentialStatus @default(PENDING)
   lastCheckedAt        DateTime?
   lastError            String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  brand                   Brand                    @relation(fields: [brandId], references: [id], onDelete: Cascade)
   providerConnection      ProviderConnection       @relation(fields: [providerConnectionId], references: [id], onDelete: Cascade)
   metricSnapshots         AdMetricSnapshot[]
   campaignMetricSnapshots CampaignMetricSnapshot[]
   adCreatives             AdCreative[]
+  rankingSnapshots        RankingSnapshot[]
+  messages                Message[]
+  proposals               Proposal[]
+  executionLogs           ExecutionLog[]
+  abTests                 AbTest[]
+  schedulerResults        SchedulerAccountResult[]
 
   @@unique([platform, externalAccountId])
   @@schema("arvisx")
@@ -258,7 +213,6 @@ model AdCredential {
  */
 model AdCreative {
   id                 String   @id @default(cuid())
-  brandId            String
   credentialId       String
   platform           Platform
   platformAdId       String
@@ -274,7 +228,6 @@ model AdCreative {
   collectedAt        DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
   credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
   @@unique([credentialId, platformAdId])
@@ -283,7 +236,6 @@ model AdCreative {
 
 model AdMetricSnapshot {
   id                 String          @id @default(cuid())
-  brandId            String
   credentialId       String
   platform           Platform
   platformCampaignId String?
@@ -319,11 +271,10 @@ model AdMetricSnapshot {
   errorMessage       String?
   collectedAt        DateTime        @default(now())
 
-  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
   credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
-  @@index([brandId, platform, collectedAt])
-  @@index([brandId, platformAdId])
+  @@index([credentialId, platform, collectedAt])
+  @@index([credentialId, platformAdId])
   @@schema("arvisx")
 }
 
@@ -346,7 +297,6 @@ model AdMetricSnapshot {
  */
 model CampaignMetricSnapshot {
   id                 String          @id @default(cuid())
-  brandId            String
   credentialId       String
   platform           Platform
   platformCampaignId String?
@@ -388,17 +338,16 @@ model CampaignMetricSnapshot {
   errorMessage       String?
   collectedAt        DateTime        @default(now())
 
-  brand      Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
   credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
-  @@index([brandId, platform, collectedAt])
-  @@index([brandId, platformCampaignId])
+  @@index([credentialId, platform, collectedAt])
+  @@index([credentialId, platformCampaignId])
   @@schema("arvisx")
 }
 
 model RankingSnapshot {
   id                     String   @id @default(cuid())
-  brandId                String
+  credentialId           String
   computedAt             DateTime @default(now())
   verdict                Verdict
   bucketsJson            Json // { spend_no_conversion:[], low_ctr:[], high_cpl:[], scale_candidates:[], needs_new_creative:[] }
@@ -406,9 +355,9 @@ model RankingSnapshot {
   sourceRangeStart       DateTime
   sourceRangeEnd         DateTime
 
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
-  @@index([brandId, computedAt])
+  @@index([credentialId, computedAt])
   @@schema("arvisx")
 }
 
@@ -430,11 +379,11 @@ model ConversationThread {
 model Message {
   id             String      @id @default(cuid())
   threadId       String
-  // Marca que essa mensagem/tool call especifica tratava - null pra mensagens sem uma
-  // marca clara (ex: saudacao). Nao substitui a validacao de acesso feita por chamada
-  // de tool (assertBrandAccess em lib/agent/tools/index.ts) - e so pra exibir de qual
-  // marca o turno falava na UI.
-  brandId        String?
+  // Conta de anuncio que essa mensagem/tool call especifica tratava - null pra mensagens
+  // sem uma conta clara (ex: saudacao). Nao substitui a validacao de acesso feita por
+  // chamada de tool (assertAccountAccess em lib/agent/tools/index.ts) - e so pra exibir
+  // de qual conta o turno falava na UI.
+  credentialId   String?
   role           MessageRole
   content        String      @db.Text
   toolName       String?
@@ -445,17 +394,17 @@ model Message {
   tokensOutput   Int?
   createdAt      DateTime    @default(now())
 
-  thread ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  brand  Brand?             @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  thread     ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  credential AdCredential?      @relation(fields: [credentialId], references: [id], onDelete: SetNull)
 
   @@index([threadId, createdAt])
-  @@index([brandId, createdAt])
+  @@index([credentialId, createdAt])
   @@schema("arvisx")
 }
 
 model Proposal {
   id                    String         @id @default(cuid())
-  brandId               String
+  credentialId          String
   threadId              String?
   createdByUserId       String? // null quando criado pelo scheduler/agente de forma autonoma
   type                  ProposalType
@@ -483,14 +432,14 @@ model Proposal {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  brand      Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  credential AdCredential        @relation(fields: [credentialId], references: [id], onDelete: Cascade)
   thread     ConversationThread? @relation(fields: [threadId], references: [id])
   createdBy  User?               @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
   decidedBy  User?               @relation("ProposalDecidedBy", fields: [decidedByUserId], references: [id])
   executions ExecutionLog[]
   abTest     AbTest?
 
-  @@index([brandId, status])
+  @@index([credentialId, status])
   @@schema("arvisx")
 }
 
@@ -502,7 +451,7 @@ model Proposal {
 model AbTest {
   id             String    @id @default(cuid())
   proposalId     String    @unique
-  brandId        String
+  credentialId   String
   platform       Platform
   controlAdId    String
   controlAdSetId String
@@ -518,8 +467,8 @@ model AbTest {
   resultSummary  Json?
   completedAt    DateTime?
 
-  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  proposal   Proposal     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
   @@index([status, endsAt])
   @@schema("arvisx")
@@ -528,7 +477,7 @@ model AbTest {
 model ExecutionLog {
   id               String          @id @default(cuid())
   proposalId       String // obrigatorio - garante "sempre vinculado a uma proposta"
-  brandId          String
+  credentialId     String
   executedByUserId String?
   platform         Platform
   action           ExecutionAction
@@ -539,11 +488,11 @@ model ExecutionLog {
   rollbackInfoJson Json?
   executedAt       DateTime        @default(now())
 
-  proposal   Proposal @relation(fields: [proposalId], references: [id])
-  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  executedBy User?    @relation("ExecutedBy", fields: [executedByUserId], references: [id])
+  proposal   Proposal     @relation(fields: [proposalId], references: [id])
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  executedBy User?        @relation("ExecutedBy", fields: [executedByUserId], references: [id])
 
-  @@index([brandId, executedAt])
+  @@index([credentialId, executedAt])
   @@schema("arvisx")
 }
 
@@ -556,36 +505,21 @@ model SchedulerRun {
   status       String // running | completed | failed
   errorMessage String?
 
-  brandResults SchedulerBrandResult[]
+  accountResults SchedulerAccountResult[]
 
   @@schema("arvisx")
 }
 
-model SchedulerBrandResult {
+model SchedulerAccountResult {
   id             String  @id @default(cuid())
   schedulerRunId String
-  brandId        String
+  credentialId   String
   outcome        String // proposal_created | no_action | skipped_recent | error
   proposalId     String?
   errorMessage   String?
 
-  run   SchedulerRun @relation(fields: [schedulerRunId], references: [id], onDelete: Cascade)
-  brand Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  run        SchedulerRun @relation(fields: [schedulerRunId], references: [id], onDelete: Cascade)
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
-  @@schema("arvisx")
-}
-
-model FirewallLog {
-  id              String   @id @default(cuid())
-  brandId         String
-  direction       String // IN | OUT
-  contentSnippet  String   @db.Text
-  matchedKeywords String[]
-  decision        String // ALLOW | BLOCK
-  createdAt       DateTime @default(now())
-
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
-
-  @@index([brandId, createdAt])
   @@schema("arvisx")
 }

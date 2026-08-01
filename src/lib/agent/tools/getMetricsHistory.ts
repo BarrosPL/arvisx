@@ -7,9 +7,9 @@ import type { GetMetricsHistoryArgs } from "@/lib/agent/schema";
  * AdMetricSnapshot). Deixa a JAMILE comparar performance ao longo do tempo, nao so
  * o instantaneo mais recente.
  */
-export async function getMetricsHistory(brandId: string, args: GetMetricsHistoryArgs) {
+export async function getMetricsHistory(credentialId: string, args: GetMetricsHistoryArgs) {
   const snapshots = await prisma.adMetricSnapshot.findMany({
-    where: { brandId, platformAdId: args.platformAdId, collectionState: "OK" },
+    where: { credentialId, platformAdId: args.platformAdId, collectionState: "OK" },
     orderBy: { collectedAt: "asc" },
     take: args.limit,
   });

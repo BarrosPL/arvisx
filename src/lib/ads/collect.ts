@@ -16,13 +16,15 @@ function credentialStatusFor(state: CollectionState): CredentialStatus {
   return CredentialStatus.CONNECTED;
 }
 
-export async function collectForBrand(
-  brandId: string,
+/** Coleta metricas por ANUNCIO de UMA conta. Antes recebia um brandId e varria todas as
+ * contas da marca - com a remocao do conceito de marca, a conta e a unidade. */
+export async function collectAdMetricsForAccount(
+  credentialId: string,
   platform: Platform,
   fetcher: (credential: PlatformCredential) => Promise<CollectionResult>
 ): Promise<CollectSummary[]> {
   const credentials = await prisma.adCredential.findMany({
-    where: { brandId, platform },
+    where: { id: credentialId, platform },
     include: { providerConnection: true },
   });
   const summaries: CollectSummary[] = [];
@@ -37,7 +39,6 @@ export async function collectForBrand(
     const rowsToInsert: Prisma.AdMetricSnapshotCreateManyInput[] =
       result.rows.length > 0
         ? result.rows.map((row) => ({
-            brandId,
             credentialId: record.id,
             platform,
             platformCampaignId: row.platformCampaignId,
@@ -65,7 +66,6 @@ export async function collectForBrand(
           }))
         : [
             {
-              brandId,
               credentialId: record.id,
               platform,
               collectionState: result.state,

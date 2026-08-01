@@ -95,7 +95,7 @@ async function finalizeAbTest(test: AbTest): Promise<void> {
 
   await prisma.proposal.create({
     data: {
-      brandId: test.brandId,
+      credentialId: test.credentialId,
       threadId: null,
       createdByUserId: null,
       type: "PAUSE_AD",

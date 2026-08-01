@@ -113,27 +113,27 @@ describe("proposalPayloadSchema — NEW_CAMPAIGN", () => {
 });
 
 describe("tools de decisão/execução (chat)", () => {
-  const brandId = "brand_1";
+  const accountId = "account_1";
   const proposalId = "prop_1";
 
-  it("get_proposal exige brandId e proposalId", () => {
-    expect(getProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(true);
-    expect(getProposalChatArgsSchema.safeParse({ brandId }).success).toBe(false);
+  it("get_proposal exige accountId e proposalId", () => {
+    expect(getProposalChatArgsSchema.safeParse({ accountId, proposalId }).success).toBe(true);
+    expect(getProposalChatArgsSchema.safeParse({ accountId }).success).toBe(false);
   });
 
   it("resolve_proposal aceita approve/test sem note", () => {
-    expect(resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "approve" }).success).toBe(true);
-    expect(resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "test" }).success).toBe(true);
+    expect(resolveProposalChatArgsSchema.safeParse({ accountId, proposalId, decision: "approve" }).success).toBe(true);
+    expect(resolveProposalChatArgsSchema.safeParse({ accountId, proposalId, decision: "test" }).success).toBe(true);
   });
 
   it("resolve_proposal recusa reject sem note", () => {
-    const result = resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "reject" });
+    const result = resolveProposalChatArgsSchema.safeParse({ accountId, proposalId, decision: "reject" });
     expect(result.success).toBe(false);
   });
 
   it("resolve_proposal aceita reject com note", () => {
     const result = resolveProposalChatArgsSchema.safeParse({
-      brandId,
+      accountId,
       proposalId,
       decision: "reject",
       note: "CPL muito alto pro histórico da marca",
@@ -142,21 +142,21 @@ describe("tools de decisão/execução (chat)", () => {
   });
 
   it("resolve_proposal recusa decision fora do enum (ex: adjust, que agora é tool separada)", () => {
-    const result = resolveProposalChatArgsSchema.safeParse({ brandId, proposalId, decision: "adjust" });
+    const result = resolveProposalChatArgsSchema.safeParse({ accountId, proposalId, decision: "adjust" });
     expect(result.success).toBe(false);
   });
 
   it("adjust_proposal exige note mesmo sem mudar nenhum campo", () => {
-    expect(adjustProposalChatArgsSchema.safeParse({ brandId, proposalId, note: "Reduzindo a verba pedida" }).success).toBe(
+    expect(adjustProposalChatArgsSchema.safeParse({ accountId, proposalId, note: "Reduzindo a verba pedida" }).success).toBe(
       true
     );
-    expect(adjustProposalChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(false);
+    expect(adjustProposalChatArgsSchema.safeParse({ accountId, proposalId }).success).toBe(false);
   });
 
-  it("confirm_and_execute_action exige o payload completo da proposta (mesmo formato de propose_action) mais brandId", () => {
-    expect(confirmAndExecuteActionChatArgsSchema.safeParse({ brandId, proposalId }).success).toBe(false);
+  it("confirm_and_execute_action exige o payload completo da proposta (mesmo formato de propose_action) mais accountId", () => {
+    expect(confirmAndExecuteActionChatArgsSchema.safeParse({ accountId, proposalId }).success).toBe(false);
     const fullPayload = {
-      brandId,
+      accountId,
       type: "PAUSE_AD" as const,
       title: "Pausar anúncio com CPL alto",
       reason: "CPL 40% acima da média das últimas coletas",

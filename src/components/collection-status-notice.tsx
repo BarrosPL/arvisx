@@ -2,7 +2,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { RefreshDataButton } from "@/components/refresh-data-button";
 
 export interface CollectionFailure {
-  brandName: string;
+  accountName: string;
   platform: string;
   errorMessage: string | null;
 }
@@ -51,8 +51,8 @@ export function CollectionStatusNotice({
       </div>
       <ul className="flex flex-col gap-0.5 pl-6">
         {failures.slice(0, 5).map((failure, index) => (
-          <li key={`${failure.brandName}-${index}`} className="text-xs text-muted-foreground">
-            <span className="font-medium">{failure.brandName}</span> ({failure.platform}) —{" "}
+          <li key={`${failure.accountName}-${index}`} className="text-xs text-muted-foreground">
+            <span className="font-medium">{failure.accountName}</span> ({failure.platform}) —{" "}
             {failure.errorMessage ?? "erro desconhecido"}
           </li>
         ))}

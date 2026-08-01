@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { openai, AGENT_MODEL } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
-import { buildSystemPrompt, type PersonaBrandInput } from "@/lib/agent/persona";
+import { buildSystemPrompt, type PersonaAccountInput } from "@/lib/agent/persona";
 import { TOOL_DEFS, dispatchTool } from "@/lib/agent/tools";
 import type { RecommendedAction, Verdict } from "@/lib/ranking/verdict";
 import { classifyFunnelStage, type FunnelStage } from "@/lib/ranking/funnel";
@@ -17,10 +17,10 @@ const MAX_ITERATIONS = 8;
  * o loop de tool-calling e identico, so o prompt de tarefa muda.
  */
 async function runAutonomousTurn(
-  brand: PersonaBrandInput & { id: string },
+  brand: PersonaAccountInput & { id: string },
   taskPrompt: string
 ): Promise<{ proposalCreated: boolean; proposalId: string | null }> {
-  const ctx = { brandId: brand.id };
+  const ctx = { accountId: brand.id };
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt(brand) },
@@ -67,7 +67,7 @@ async function runAutonomousTurn(
 /** Roda a JAMILE pra analisar UM candidato a escala especifico e decidir, com
  * julgamento, se e quanto ajustar a verba. */
 export async function runAutonomousBudgetProposal(
-  brand: PersonaBrandInput & { id: string },
+  brand: PersonaAccountInput & { id: string },
   action: RecommendedAction
 ): Promise<{ proposalCreated: boolean; proposalId: string | null }> {
   const prompt = `Analise este candidato a escala e decida se vale propor um ajuste de verba:
@@ -93,9 +93,9 @@ interface ExistingCampaignSummary {
 
 /** Uma linha por campanha com dado coletado (nao por anuncio) - pra JAMILE avaliar
  * cobertura de funil sem precisar contar/agrupar ela mesma. */
-async function summarizeExistingCampaigns(brandId: string): Promise<ExistingCampaignSummary[]> {
+async function summarizeExistingCampaigns(accountId: string): Promise<ExistingCampaignSummary[]> {
   const snapshots = await prisma.adMetricSnapshot.findMany({
-    where: { brandId, collectionState: "OK" },
+    where: { credentialId: accountId, collectionState: "OK" },
     orderBy: { collectedAt: "desc" },
     distinct: ["platform", "platformCampaignId"],
     select: { platform: true, campaignName: true },
@@ -127,7 +127,7 @@ async function summarizeExistingCampaigns(brandId: string): Promise<ExistingCamp
  * o resultado esperado na maioria das rodadas - so propoe com motivo citavel.
  */
 export async function runAutonomousNewCampaignScan(
-  brand: PersonaBrandInput & { id: string },
+  brand: PersonaAccountInput & { id: string },
   verdict: Verdict
 ): Promise<{ proposalCreated: boolean; proposalId: string | null }> {
   const campaigns = await summarizeExistingCampaigns(brand.id);

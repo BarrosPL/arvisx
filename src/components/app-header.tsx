@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ChevronRight, LogOut, User } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -13,40 +13,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GLOBAL_NAV, brandNavFor, type BrandNavItem } from "@/components/app-sidebar";
+import { GLOBAL_NAV } from "@/components/app-sidebar";
 import { NotificationBell } from "@/components/notification-bell";
 import type { AttentionEntry } from "@/lib/notifications";
 
 /**
- * Header global - titulo/breadcrumb da secao atual (deriva do pathname, mesma logica
- * de deteccao de marca ativa do AppSidebar) + sino de notificacao + menu do usuario,
- * substituindo o botao "Sair" solto que competia visualmente com o resto do produto.
+ * Header global - titulo da secao atual (deriva do pathname) + sino de notificacao +
+ * menu do usuario.
  */
 export function AppHeader({
-  brands,
   userEmail,
   onSignOut,
   notifications,
 }: {
-  brands: BrandNavItem[];
   userEmail: string;
   onSignOut: () => Promise<void>;
   notifications: AttentionEntry[];
 }) {
   const pathname = usePathname();
 
-  const brandSlugMatch = pathname.match(/^\/brands\/([^/]+)/);
-  const activeBrand = brandSlugMatch ? (brands.find((b) => b.slug === brandSlugMatch[1]) ?? null) : null;
-
-  let sectionLabel: string;
-  if (activeBrand) {
-    const item = brandNavFor(activeBrand.slug).find((navItem) => navItem.href === pathname);
-    sectionLabel = item?.label ?? "Visão geral";
-  } else {
-    const item = GLOBAL_NAV.find((navItem) => navItem.href === pathname);
-    sectionLabel =
-      item?.label ?? (pathname === "/brands" ? "Marcas" : pathname === "/brands/new" ? "Nova marca" : "");
-  }
+  const sectionLabel =
+    GLOBAL_NAV.find((navItem) => navItem.href === pathname)?.label ?? "";
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
@@ -54,15 +41,7 @@ export function AppHeader({
         <SidebarTrigger />
         <Separator orientation="vertical" className="h-5" />
         <nav className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
-          {activeBrand ? (
-            <>
-              <span className="min-w-0 truncate text-muted-foreground">{activeBrand.name}</span>
-              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="shrink-0 truncate font-medium">{sectionLabel}</span>
-            </>
-          ) : (
-            <span className="truncate font-medium">{sectionLabel}</span>
-          )}
+          <span className="truncate font-medium">{sectionLabel}</span>
         </nav>
       </div>
 

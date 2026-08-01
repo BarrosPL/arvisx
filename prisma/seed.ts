@@ -2,7 +2,6 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { BRAND_REGISTRY } from "../src/lib/brands/registry";
 
 // APP_DATABASE_URL (papel restrito) - mesmo motivo do bootstrapAdmin.ts: a janela de
 // bootstrap da RLS ja libera o que este script precisa, sem exigir o superusuario.
@@ -24,7 +23,7 @@ async function main() {
   // o placeholder abaixo e ignorado pela policy mesmo assim.
   const anyAdmin = await prisma.user.findFirst({ where: { role: "ADMIN", disabledAt: null } });
 
-  const owner = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_user_id', ${anyAdmin?.id ?? "seed-bootstrap"}, true)`;
     return tx.user.upsert({
       where: { email: ownerEmail },
@@ -37,32 +36,8 @@ async function main() {
     });
   });
 
-  for (const brand of BRAND_REGISTRY) {
-    const record = await prisma.brand.upsert({
-      where: { slug: brand.slug },
-      update: {
-        name: brand.name,
-        priorityOrder: brand.priorityOrder,
-        topicKeywords: brand.topicKeywords,
-        excludedKeywords: brand.excludedKeywords,
-      },
-      create: {
-        slug: brand.slug,
-        name: brand.name,
-        status: "ACTIVE",
-        priorityOrder: brand.priorityOrder,
-        topicKeywords: brand.topicKeywords,
-        excludedKeywords: brand.excludedKeywords,
-      },
-    });
-
-    await prisma.brandAccess.upsert({
-      where: { userId_brandId: { userId: owner.id, brandId: record.id } },
-      update: { role: "OWNER" },
-      create: { userId: owner.id, brandId: record.id, role: "OWNER" },
-    });
-  }
-
+  // Nao ha mais nada pra semear alem do usuario: as contas de anuncio entram sozinhas
+  // quando ele conecta um login Meta/Google (ver lib/accounts/autoProvision.ts).
   console.log(`Seed concluido. Usuario owner: ${ownerEmail}`);
   if (!process.env.SEED_OWNER_PASSWORD) {
     console.log(`Senha padrao (TROCAR): ${ownerPassword}`);

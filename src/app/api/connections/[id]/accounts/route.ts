@@ -30,20 +30,25 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       accounts = await listGoogleAccessibleCustomers(freshAccessToken);
     }
 
+    // Toda conta descoberta ja vira um AdCredential automaticamente (ver
+    // lib/accounts/autoProvision.ts) - nao ha mais atribuicao manual. Isto aqui so
+    // informa quais ja estao registradas, pra UI mostrar o estado.
     const externalAccountIds = accounts.map((account) => account.externalAccountId);
-    const assignments = await prisma.adCredential.findMany({
+    const registered = await prisma.adCredential.findMany({
       where: { platform: connection.platform, externalAccountId: { in: externalAccountIds } },
-      include: { brand: { select: { id: true, slug: true, name: true } } },
+      select: { id: true, externalAccountId: true, providerConnectionId: true, status: true },
     });
-    const assignmentByAccountId = new Map(assignments.map((a) => [a.externalAccountId, a]));
+    const registeredByAccountId = new Map(registered.map((a) => [a.externalAccountId, a]));
 
     return NextResponse.json({
       accounts: accounts.map((account) => {
-        const assignment = assignmentByAccountId.get(account.externalAccountId);
+        const match = registeredByAccountId.get(account.externalAccountId);
         return {
           ...account,
-          assignedBrand: assignment ? assignment.brand : null,
-          assignedViaOtherConnection: assignment ? assignment.providerConnectionId !== id : false,
+          credentialId: match?.id ?? null,
+          status: match?.status ?? null,
+          // Ja registrada por OUTRO login do sistema - por isso nao aparece nesta conexao.
+          registeredViaOtherConnection: match ? match.providerConnectionId !== id : false,
         };
       }),
     });

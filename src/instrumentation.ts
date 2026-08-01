@@ -59,7 +59,7 @@ export async function register() {
         return;
       }
       console.log(
-        `[coleta] ${result.brands} marca(s), ${result.credentials} conta(s)` +
+        `[coleta] ${result.accounts} conta(s)` +
           (result.errors > 0 ? `, ${result.errors} com erro` : "")
       );
     } catch (error) {

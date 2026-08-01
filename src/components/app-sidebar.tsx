@@ -1,37 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   CalendarClock,
-  Check,
-  ChevronsUpDown,
   Image,
   KeyRound,
   LayoutDashboard,
   ListChecks,
   Plug,
-  Plus,
   ShieldCheck,
   Sparkles,
   Wand2,
 } from "lucide-react";
-import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
-import { StatusBadge } from "@/components/status-badge";
-import { brandStatusTone } from "@/lib/brands/status";
-import { cn } from "@/lib/utils";
 import { useJamileChat } from "@/components/jamile-launcher";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Sidebar,
   SidebarContent,
@@ -77,31 +60,18 @@ export function brandNavFor(slug: string): NavItem[] {
 }
 
 export function AppSidebar({
-  brands,
   userEmail,
   isAdmin,
   pendingProposalsCount = 0,
 }: {
-  brands: BrandNavItem[];
   userEmail: string;
   isAdmin?: boolean;
-  /** Propostas aguardando decisão (todas as marcas do usuário) - mostrado como badge
-   * no botão "Falar com a JAMILE", já que a decisão em si acontece só pelo chat agora. */
+  /** Itens aguardando atenção (todas as contas do usuário) - mostrado como badge no
+   * botão "Falar com a JAMILE", já que a decisão em si acontece só pelo chat agora. */
   pendingProposalsCount?: number;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [switcherOpen, setSwitcherOpen] = useState(false);
   const { openChat } = useJamileChat();
-
-  const brandSlugMatch = pathname.match(/^\/brands\/([^/]+)/);
-  const activeBrand = brandSlugMatch ? (brands.find((b) => b.slug === brandSlugMatch[1]) ?? null) : null;
-  const navItems = activeBrand ? brandNavFor(activeBrand.slug) : GLOBAL_NAV;
-
-  function goTo(href: string) {
-    router.push(href);
-    setSwitcherOpen(false);
-  }
 
   return (
     <Sidebar collapsible="icon">
@@ -119,63 +89,6 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <Popover open={switcherOpen} onOpenChange={setSwitcherOpen}>
-              <PopoverTrigger className="flex w-full items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-                {activeBrand ? (
-                  <BrandAvatar name={activeBrand.name} seed={activeBrand.id} size="xs" />
-                ) : (
-                  <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <LayoutDashboard className="size-3" />
-                  </div>
-                )}
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate font-medium leading-tight">
-                    {activeBrand ? activeBrand.name : "Visão Geral"}
-                  </span>
-                  {activeBrand ? (
-                    <StatusBadge {...brandStatusTone(activeBrand.status)} className="h-4 w-fit px-1.5 text-[10px]" />
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">Trocar de marca</span>
-                  )}
-                </span>
-                <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Buscar..." />
-                  <CommandList>
-                    <CommandEmpty>Nada encontrado.</CommandEmpty>
-                    <CommandGroup>
-                      <CommandItem value="visao-geral" onSelect={() => goTo("/dashboard")}>
-                        <Check className={cn("mr-2 size-4", !activeBrand ? "opacity-100" : "opacity-0")} />
-                        Visão Geral
-                      </CommandItem>
-                    </CommandGroup>
-                    <CommandGroup heading="Marcas">
-                      {brands.map((brand) => (
-                        <CommandItem key={brand.id} value={brand.name} onSelect={() => goTo(`/brands/${brand.slug}`)}>
-                          <Check
-                            className={cn("mr-2 size-4", activeBrand?.id === brand.id ? "opacity-100" : "opacity-0")}
-                          />
-                          <BrandAvatar name={brand.name} seed={brand.id} size="xs" className="mr-1.5" />
-                          <span className="flex-1 truncate">{brand.name}</span>
-                          <StatusBadge {...brandStatusTone(brand.status)} className="h-4 shrink-0 px-1.5 text-[10px]" />
-                        </CommandItem>
-                      ))}
-                      <CommandItem value="nova-marca" onSelect={() => goTo("/brands/new")}>
-                        <Plus className="mr-2 size-4" />
-                        Nova marca
-                      </CommandItem>
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -199,7 +112,7 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {GLOBAL_NAV.map((item) => {
                 const active = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>

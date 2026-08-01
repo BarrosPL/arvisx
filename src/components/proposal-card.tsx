@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -20,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { proposalStatusTone } from "@/lib/proposals/status";
-import { BrandAvatar } from "@/components/brand-avatar";
 import { IconBadge, type IconBadgeColor } from "@/components/icon-badge";
 import { StatusBadge } from "@/components/status-badge";
 import type { CampaignPlan } from "@/lib/agent/schema";
@@ -156,10 +154,9 @@ export interface ProposalView {
   campaignPlan?: CampaignPlan | null;
 }
 
-export interface ProposalBrandView {
+export interface ProposalAccountView {
   id: string;
   name: string;
-  slug: string;
 }
 
 /**
@@ -170,7 +167,7 @@ export interface ProposalBrandView {
  * "JAMILE conduz tudo pelo chat". Anexar a imagem de uma NEW_CAMPAIGN também migrou pro chat
  * (ChatCreativeAssetUpload em chat-panel.tsx).
  */
-export function ProposalCard({ proposal, brand }: { proposal: ProposalView; brand?: ProposalBrandView }) {
+export function ProposalCard({ proposal, account }: { proposal: ProposalView; account?: ProposalAccountView }) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -201,15 +198,7 @@ export function ProposalCard({ proposal, brand }: { proposal: ProposalView; bran
     <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
-          {brand ? (
-            <Link
-              href={`/brands/${brand.slug}`}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <BrandAvatar name={brand.name} seed={brand.id} size="xs" />
-              {brand.name}
-            </Link>
-          ) : null}
+          {account ? <span className="text-xs text-muted-foreground">{account.name}</span> : null}
           <div className="flex items-center gap-2">
             <IconBadge icon={TYPE_ICON[proposal.type] ?? CircleDot} color={TYPE_COLOR[proposal.type] ?? "blue"} size="sm" />
             <div className="flex min-w-0 flex-col">

@@ -40,19 +40,19 @@ import { confirmAndExecuteAction, resolveProposal } from "@/lib/proposals/chatAc
 import { deleteProposalAsUser } from "@/lib/proposals/deleteProposal";
 
 export interface ToolContext {
-  brandId: string;
+  accountId: string;
   /** Ausente quando a analise e autonoma (rodada do scheduler), sem chat associado. */
   threadId?: string;
 }
 
-const BRAND_ID_PARAM = {
+const ACCOUNT_ID_PARAM = {
   type: "string",
-  description: "Id exato da marca (da lista de marcas do usuario no prompt de sistema) a que essa chamada se refere.",
+  description: "Id exato da conta de anuncio (da lista de contas do usuario no prompt de sistema) a que essa chamada se refere.",
 };
 
 /** Formato completo do payload de uma proposta - reaproveitado por propose_action
- * (TOOL_DEFS, sem brandId - vem do ToolContext) e confirm_and_execute_action
- * (DECISION_TOOL_DEFS, com brandId - o chat escolhe a marca por chamada). */
+ * (TOOL_DEFS, sem accountId - vem do ToolContext) e confirm_and_execute_action
+ * (DECISION_TOOL_DEFS, com accountId - o chat escolhe a conta por chamada). */
 const PROPOSAL_PAYLOAD_PROPERTIES = {
   type: {
     type: "string",
@@ -164,7 +164,7 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "get_ranking",
       description:
-        "Le o ultimo veredito de ranking (BOM/MEDIO/RUIM) e as ate 3 acoes recomendadas para a marca, recalculando se o snapshot estiver desatualizado.",
+        "Le o ultimo veredito de ranking (BOM/MEDIO/RUIM) e as ate 3 acoes recomendadas para a conta, recalculando se o snapshot estiver desatualizado.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -173,7 +173,7 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "get_metrics",
       description:
-        "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a marca, cada uma ja marcada com seu campaignId/campaignName e adSetId/adSetName. A lista devolvida pode vir truncada pelo limit (ver totalCount/returnedCount/truncated na resposta) - nunca conte ou some itens dessa lista pra responder 'quantos anuncios'/'quanto no total'; pra perguntas de contagem por conjunto de anuncios use get_ad_sets, que ja vem calculado. Pra ver so os anuncios de UM conjunto/campanha especifico (ex: depois de usar get_ad_sets pra achar o conjunto certo, ou antes de propor pausar/ativar/ajustar verba de um anuncio dentro dele), filtre por adSetId e/ou campaignId - sempre com o id real ja visto numa resposta anterior, nunca inventado.",
+        "Le as metricas de anuncio (spend, CTR, CPC, CPL, CPA, conversoes) mais recentes coletadas para a conta, cada uma ja marcada com seu campaignId/campaignName e adSetId/adSetName. A lista devolvida pode vir truncada pelo limit (ver totalCount/returnedCount/truncated na resposta) - nunca conte ou some itens dessa lista pra responder 'quantos anuncios'/'quanto no total'; pra perguntas de contagem por conjunto de anuncios use get_ad_sets, que ja vem calculado. Pra ver so os anuncios de UM conjunto/campanha especifico (ex: depois de usar get_ad_sets pra achar o conjunto certo, ou antes de propor pausar/ativar/ajustar verba de um anuncio dentro dele), filtre por adSetId e/ou campaignId - sempre com o id real ja visto numa resposta anterior, nunca inventado.",
       parameters: {
         type: "object",
         properties: {
@@ -208,7 +208,7 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "get_ad_sets",
       description:
-        "Agrupa os anuncios da marca por conjunto de anuncios (AdSet no Meta, Grupo de anuncios/AdGroup no Google) e ja devolve a contagem/soma pronta (quantos anuncios em cada, verba, conversoes) - CALCULADO NO SISTEMA, nao por voce. Use SEMPRE que o usuario perguntar 'quantos anuncios tem em cada conjunto/adset/grupo' ou pedir uma visao por conjunto de anuncios - nunca tente contar ou agrupar isso sozinho a partir da lista de get_metrics, que pode vir truncada e nao e pra ser somada manualmente. So devolve o RESUMO por conjunto (nao a lista de anuncios de dentro) - pra ver/agir em anuncios especificos de um conjunto (metricas, propor pausar/ativar/ajustar verba), pegue o adSetId daqui e chame get_metrics filtrando por adSetId.",
+        "Agrupa os anuncios da conta por conjunto de anuncios (AdSet no Meta, Grupo de anuncios/AdGroup no Google) e ja devolve a contagem/soma pronta (quantos anuncios em cada, verba, conversoes) - CALCULADO NO SISTEMA, nao por voce. Use SEMPRE que o usuario perguntar 'quantos anuncios tem em cada conjunto/adset/grupo' ou pedir uma visao por conjunto de anuncios - nunca tente contar ou agrupar isso sozinho a partir da lista de get_metrics, que pode vir truncada e nao e pra ser somada manualmente. So devolve o RESUMO por conjunto (nao a lista de anuncios de dentro) - pra ver/agir em anuncios especificos de um conjunto (metricas, propor pausar/ativar/ajustar verba), pegue o adSetId daqui e chame get_metrics filtrando por adSetId.",
       parameters: {
         type: "object",
         properties: {
@@ -339,23 +339,23 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
 
     switch (name) {
       case "get_ranking":
-        return await getRanking(ctx.brandId);
+        return await getRanking(ctx.accountId);
       case "get_metrics":
-        return await getMetrics(ctx.brandId, getMetricsArgsSchema.parse(parsedJson));
+        return await getMetrics(ctx.accountId, getMetricsArgsSchema.parse(parsedJson));
       case "get_metrics_history":
-        return await getMetricsHistory(ctx.brandId, getMetricsHistoryArgsSchema.parse(parsedJson));
+        return await getMetricsHistory(ctx.accountId, getMetricsHistoryArgsSchema.parse(parsedJson));
       case "get_ad_sets":
-        return await getAdSets(ctx.brandId, getAdSetsArgsSchema.parse(parsedJson));
+        return await getAdSets(ctx.accountId, getAdSetsArgsSchema.parse(parsedJson));
       case "get_campaigns":
-        return await getCampaigns(ctx.brandId, getCampaignsArgsSchema.parse(parsedJson));
+        return await getCampaigns(ctx.accountId, getCampaignsArgsSchema.parse(parsedJson));
       case "get_ad_budget":
-        return await getAdBudget(ctx.brandId, getAdBudgetArgsSchema.parse(parsedJson));
+        return await getAdBudget(ctx.accountId, getAdBudgetArgsSchema.parse(parsedJson));
       case "get_ad_library":
-        return await getAdLibrary(ctx.brandId, getAdLibraryArgsSchema.parse(parsedJson));
+        return await getAdLibrary(ctx.accountId, getAdLibraryArgsSchema.parse(parsedJson));
       case "search_public_ad_library":
-        return await searchPublicAdLibrary(ctx.brandId, searchPublicAdLibraryArgsSchema.parse(parsedJson));
+        return await searchPublicAdLibrary(ctx.accountId, searchPublicAdLibraryArgsSchema.parse(parsedJson));
       case "propose_action":
-        return await proposeAction(ctx, proposalPayloadSchema.parse(parsedJson));
+        return await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId }, proposalPayloadSchema.parse(parsedJson));
       case "research_market":
       case "scan_competitors":
         return await researchStub(researchStubArgsSchema.parse(parsedJson));
@@ -368,13 +368,13 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
 }
 
 // ---------------------------------------------------------------------------
-// Chat por usuario (multi-marca): o modelo escolhe a marca por chamada em vez de
-// uma marca fixa no contexto (usado so pelo chat, nao pela rodada autonoma do
+// Chat por usuario (multi-conta): o modelo escolhe a conta por chamada em vez de
+// uma conta fixa no contexto (usado so pelo chat, nao pela rodada autonoma do
 // scheduler - autonomous.ts continua usando TOOL_DEFS/ToolContext/dispatchTool
 // acima, sem nenhuma mudanca).
 // ---------------------------------------------------------------------------
 
-const BRAND_SCOPED_TOOL_NAMES = new Set([
+const ACCOUNT_SCOPED_TOOL_NAMES = new Set([
   "get_ranking",
   "get_metrics",
   "get_metrics_history",
@@ -393,10 +393,10 @@ interface JsonSchemaObject {
   additionalProperties?: boolean;
 }
 
-/** Clona uma tool def e injeta "brandId" (obrigatorio) nos parametros - o modelo tem
- * que informar de qual marca do usuario e essa chamada especifica. Todas as entradas
+/** Clona uma tool def e injeta "accountId" (obrigatorio) nos parametros - o modelo tem
+ * que informar de qual conta do usuario e essa chamada especifica. Todas as entradas
  * de TOOL_DEFS sao function tools (nunca custom tools), daqui o cast direto. */
-function withBrandIdParam(tool: ChatCompletionFunctionTool): ChatCompletionFunctionTool {
+function withAccountIdParam(tool: ChatCompletionFunctionTool): ChatCompletionFunctionTool {
   const params = tool.function.parameters as unknown as JsonSchemaObject;
   return {
     ...tool,
@@ -405,13 +405,13 @@ function withBrandIdParam(tool: ChatCompletionFunctionTool): ChatCompletionFunct
       parameters: {
         ...params,
         properties: {
-          brandId: {
+          accountId: {
             type: "string",
-            description: "Id exato da marca (da lista de marcas do usuario no prompt de sistema) a que essa chamada se refere.",
+            description: "Id exato da conta de anuncio (da lista de contas do usuario no prompt de sistema) a que essa chamada se refere.",
           },
           ...params.properties,
         },
-        required: ["brandId", ...(params.required ?? [])],
+        required: ["accountId", ...(params.required ?? [])],
       },
     },
   };
@@ -432,8 +432,8 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
         "Le os detalhes completos de UMA proposta especifica pelo id (razao, risco, plano de rollback, metricas, plano de campanha se houver, e se ja tem imagem anexada). Use sempre que o usuario referenciar uma proposta especifica (ex: veio de uma notificacao) antes de explicar ou decidir sobre ela. Mensagens vindas de notificacao ja trazem o id exato entre parenteses (ex: 'id: abc123') - use esse id diretamente, nunca adivinhe um id a partir so do titulo.",
       parameters: {
         type: "object",
-        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
-        required: ["brandId", "proposalId"],
+        properties: { accountId: ACCOUNT_ID_PARAM, proposalId: { type: "string" } },
+        required: ["accountId", "proposalId"],
         additionalProperties: false,
       },
     },
@@ -446,8 +446,8 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
         "Pra uma acao NOVA (ainda sem proposta criada) que o usuario ACABOU de confirmar (pedida por ele diretamente, ou sugerida por voce e confirmada agora): cria o registro da proposta E JA APROVA E EXECUTA de verdade na plataforma (Meta/Google Ads), tudo numa chamada so - gasta dinheiro real / muda campanha real, imediatamente. SEMPRE reformule a acao exata e peca confirmacao explicita do usuario ANTES de chamar isto - sem excecao. Mesmo formato de payload de propose_action. Se faltar dado real ou (NEW_CAMPAIGN/Meta) a imagem do anuncio, isto NAO executa - devolve o motivo pra voce resolver (buscar mais dado, ou pedir a imagem) e depois chamar resolve_proposal na mesma proposta pra terminar. Se a proposta for NEW_CAMPAIGN, avise que ela nasce PAUSADA e precisa ser ativada manualmente na plataforma depois de conferida.",
       parameters: {
         type: "object",
-        properties: { brandId: BRAND_ID_PARAM, ...PROPOSAL_PAYLOAD_PROPERTIES },
-        required: ["brandId", ...PROPOSAL_PAYLOAD_REQUIRED],
+        properties: { accountId: ACCOUNT_ID_PARAM, ...PROPOSAL_PAYLOAD_PROPERTIES },
+        required: ["accountId", ...PROPOSAL_PAYLOAD_REQUIRED],
         additionalProperties: false,
       },
     },
@@ -461,12 +461,12 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          brandId: BRAND_ID_PARAM,
+          accountId: ACCOUNT_ID_PARAM,
           proposalId: { type: "string" },
           decision: { type: "string", enum: ["approve", "reject", "test"] },
           note: { type: "string", description: "Motivo/observacao - obrigatorio quando decision=reject." },
         },
-        required: ["brandId", "proposalId", "decision"],
+        required: ["accountId", "proposalId", "decision"],
         additionalProperties: false,
       },
     },
@@ -480,7 +480,7 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          brandId: BRAND_ID_PARAM,
+          accountId: ACCOUNT_ID_PARAM,
           proposalId: { type: "string" },
           title: { type: "string" },
           suggestedAction: { type: "string" },
@@ -491,7 +491,7 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
           metricsJson: { type: "object", description: "Metricas reais adicionais (spend/ctr/cpc/cpl/cpa/conversions) - use pra completar uma proposta presa em NEEDS_MORE_DATA por falta de metrica financeira." },
           note: { type: "string", description: "O que mudou e por que." },
         },
-        required: ["brandId", "proposalId", "note"],
+        required: ["accountId", "proposalId", "note"],
         additionalProperties: false,
       },
     },
@@ -504,16 +504,16 @@ const DECISION_TOOL_DEFS: ChatCompletionTool[] = [
         "Apaga uma proposta de VERDADE do banco (nao so esconde) - use quando o usuario pedir pra tirar/remover/apagar uma proposta da tela (ex: uma antiga presa em 'precisa de mais dados', ou uma duplicada). SEMPRE confirme com o usuario antes de chamar, igual as outras acoes. So falha se a proposta ja tiver sido executada (sucesso ou falha) - nesse caso e historico real, nao pode ser apagado; explique isso ao usuario em vez de insistir.",
       parameters: {
         type: "object",
-        properties: { brandId: BRAND_ID_PARAM, proposalId: { type: "string" } },
-        required: ["brandId", "proposalId"],
+        properties: { accountId: ACCOUNT_ID_PARAM, proposalId: { type: "string" } },
+        required: ["accountId", "proposalId"],
         additionalProperties: false,
       },
     },
   },
 ];
 
-/** Mesmas tools de TOOL_DEFS, com "brandId" adicionado a cada uma que le/escreve dado
- * de uma marca especifica, mais as tools de decisao/execucao (so existem aqui) -
+/** Mesmas tools de TOOL_DEFS, com "accountId" adicionado a cada uma que le/escreve dado
+ * de uma conta especifica, mais as tools de decisao/execucao (so existem aqui) -
  * usadas pelo chat por usuario. */
 /** Descricoes que fazem sentido pro scheduler (TOOL_DEFS) mas ficam erradas/enganosas
  * no chat, onde a JAMILE ganha ferramentas de decisao/execucao que nao existem la.
@@ -528,11 +528,11 @@ const CHAT_TOOL_DESCRIPTION_OVERRIDES: Record<string, string> = {
 
 export const TOOL_DEFS_CHAT: ChatCompletionTool[] = [
   ...(TOOL_DEFS as ChatCompletionFunctionTool[]).map((tool) => {
-    const withBrand = BRAND_SCOPED_TOOL_NAMES.has(tool.function.name) ? withBrandIdParam(tool) : tool;
+    const withAccount = ACCOUNT_SCOPED_TOOL_NAMES.has(tool.function.name) ? withAccountIdParam(tool) : tool;
     const overrideDescription = CHAT_TOOL_DESCRIPTION_OVERRIDES[tool.function.name];
-    if (!overrideDescription) return withBrand;
-    const withBrandFn = withBrand as ChatCompletionFunctionTool;
-    return { ...withBrandFn, function: { ...withBrandFn.function, description: overrideDescription } };
+    if (!overrideDescription) return withAccount;
+    const withAccountFn = withAccount as ChatCompletionFunctionTool;
+    return { ...withAccountFn, function: { ...withAccountFn.function, description: overrideDescription } };
   }),
   ...DECISION_TOOL_DEFS,
 ];
@@ -540,20 +540,20 @@ export const TOOL_DEFS_CHAT: ChatCompletionTool[] = [
 export interface ChatToolContext {
   userId: string;
   threadId: string;
-  /** Marcas que o usuario da thread realmente tem BrandAccess - o portao duro de
-   * seguranca: nenhuma tool roda pra uma marca fora desse conjunto, nao importa o
-   * que o modelo tenha "decidido". */
-  allowedBrandIds: Set<string>;
+  /** Contas de anuncio que o usuario da thread realmente possui (via ProviderConnection)
+   * - o portao duro de seguranca: nenhuma tool roda pra uma conta fora desse conjunto,
+   * nao importa o que o modelo tenha "decidido". */
+  allowedAccountIds: Set<string>;
 }
 
-function assertBrandAccess(ctx: ChatToolContext, brandId: string): void {
-  if (!ctx.allowedBrandIds.has(brandId)) {
-    throw new Error("Você não tem acesso a essa marca.");
+function assertAccountAccess(ctx: ChatToolContext, accountId: string): void {
+  if (!ctx.allowedAccountIds.has(accountId)) {
+    throw new Error("Você não tem acesso a essa conta de anúncio.");
   }
 }
 
 /** Despacha uma tool call do chat por usuario - equivalente a dispatchTool, mas a
- * marca vem do argumento (escolhido pelo modelo) e e validada contra allowedBrandIds
+ * conta vem do argumento (escolhido pelo modelo) e e validada contra allowedAccountIds
  * antes de qualquer leitura/escrita. Erros (incluindo falha de acesso) viram {error},
  * nunca derrubam o loop do orchestrator. */
 export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatToolContext): Promise<unknown> {
@@ -563,67 +563,67 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
     switch (name) {
       case "get_ranking": {
         const args = getRankingChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getRanking(args.brandId);
+        assertAccountAccess(ctx, args.accountId);
+        return await getRanking(args.accountId);
       }
       case "get_metrics": {
         const args = getMetricsChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getMetrics(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getMetrics(args.accountId, args);
       }
       case "get_metrics_history": {
         const args = getMetricsHistoryChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getMetricsHistory(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getMetricsHistory(args.accountId, args);
       }
       case "get_ad_sets": {
         const args = getAdSetsChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getAdSets(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getAdSets(args.accountId, args);
       }
       case "get_campaigns": {
         const args = getCampaignsChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getCampaigns(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getCampaigns(args.accountId, args);
       }
       case "get_ad_budget": {
         const args = getAdBudgetChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getAdBudget(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getAdBudget(args.accountId, args);
       }
       case "get_ad_library": {
         const args = getAdLibraryChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getAdLibrary(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await getAdLibrary(args.accountId, args);
       }
       case "search_public_ad_library": {
         const args = searchPublicAdLibraryChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await searchPublicAdLibrary(args.brandId, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await searchPublicAdLibrary(args.accountId, args);
       }
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await proposeAction({ brandId: args.brandId, threadId: ctx.threadId, userId: ctx.userId }, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await proposeAction({ credentialId: args.accountId, threadId: ctx.threadId, userId: ctx.userId }, args);
       }
       case "confirm_and_execute_action": {
         const args = confirmAndExecuteActionChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await confirmAndExecuteAction(ctx.userId, { brandId: args.brandId, threadId: ctx.threadId }, args);
+        assertAccountAccess(ctx, args.accountId);
+        return await confirmAndExecuteAction(ctx.userId, { accountId: args.accountId, threadId: ctx.threadId }, args);
       }
       case "get_proposal": {
         const args = getProposalChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
-        return await getProposal(args.brandId, args.proposalId);
+        assertAccountAccess(ctx, args.accountId);
+        return await getProposal(args.accountId, args.proposalId);
       }
       case "resolve_proposal": {
         const args = resolveProposalChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
+        assertAccountAccess(ctx, args.accountId);
         return await resolveProposal(ctx.userId, args.proposalId, args.decision, args.note ?? null);
       }
       case "adjust_proposal": {
         const args = adjustProposalChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
+        assertAccountAccess(ctx, args.accountId);
         const proposal = await adjustProposalAsUser(
           ctx.userId,
           args.proposalId,
@@ -642,7 +642,7 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
       }
       case "delete_proposal": {
         const args = deleteProposalChatArgsSchema.parse(parsedJson);
-        assertBrandAccess(ctx, args.brandId);
+        assertAccountAccess(ctx, args.accountId);
         await deleteProposalAsUser(ctx.userId, args.proposalId);
         return { proposalId: args.proposalId, deleted: true };
       }
@@ -657,13 +657,13 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
   }
 }
 
-/** Extrai o brandId (se houver) dos argumentos crus de uma tool call do chat -
- * usado pelo orchestrator so pra rotular qual marca cada Message/tool call tratava
+/** Extrai o accountId (se houver) dos argumentos crus de uma tool call do chat -
+ * usado pelo orchestrator so pra rotular qual conta cada Message/tool call tratava
  * na UI, depois que dispatchChatTool ja validou o acesso de verdade. */
-export function extractBrandIdFromArgs(rawArgs: string): string | null {
+export function extractAccountIdFromArgs(rawArgs: string): string | null {
   try {
     const parsed = JSON.parse(rawArgs);
-    return typeof parsed?.brandId === "string" ? parsed.brandId : null;
+    return typeof parsed?.accountId === "string" ? parsed.accountId : null;
   } catch {
     return null;
   }

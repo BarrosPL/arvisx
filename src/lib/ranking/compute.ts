@@ -5,12 +5,12 @@ import { buildVerdict } from "./verdict";
 import { classifyFunnelStage } from "./funnel";
 import type { RankableRow } from "./types";
 
-export async function computeAndSaveRanking(brandId: string) {
+export async function computeAndSaveRanking(credentialId: string) {
   // So a coleta mais recente por (credencial, anuncio) - o historico de coletas
   // anteriores fica acumulado em AdMetricSnapshot (lib/ads/collect.ts nao apaga
   // mais), mas o ranking sempre le so o estado mais fresco de cada anuncio.
   const snapshots = await prisma.adMetricSnapshot.findMany({
-    where: { brandId, collectionState: CollectionState.OK },
+    where: { credentialId, collectionState: CollectionState.OK },
     orderBy: { collectedAt: "desc" },
     distinct: ["credentialId", "platformAdId"],
   });
@@ -48,7 +48,7 @@ export async function computeAndSaveRanking(brandId: string) {
 
   return prisma.rankingSnapshot.create({
     data: {
-      brandId,
+      credentialId,
       verdict,
       bucketsJson: JSON.parse(JSON.stringify(buckets)),
       recommendedActionsJson: JSON.parse(JSON.stringify(recommendedActions)),

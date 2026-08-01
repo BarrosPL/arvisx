@@ -60,13 +60,13 @@ interface DispatchResult {
   createdIds?: CreatedIds;
 }
 
-async function findCredential(brandId: string, platform: "META" | "GOOGLE") {
+async function findCredential(credentialId: string, platform: "META" | "GOOGLE") {
   const record = await prisma.adCredential.findFirst({
-    where: { brandId, platform },
+    where: { id: credentialId, platform },
     include: { providerConnection: true },
   });
   if (!record) {
-    throw new Error(`Nenhuma credencial ${platform} atribuida a esta marca`);
+    throw new Error(`A conta de anuncio desta proposta nao e ${platform}`);
   }
   return toPlatformCredential(record);
 }
@@ -76,7 +76,7 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
   if (!proposal.platform) {
     throw new Error("Proposta sem plataforma definida");
   }
-  const credential = await findCredential(proposal.brandId, proposal.platform);
+  const credential = await findCredential(proposal.credentialId, proposal.platform);
 
   if (proposal.type === "PAUSE_AD" || proposal.type === "ACTIVATE_AD") {
     const wantActive = proposal.type === "ACTIVATE_AD";
@@ -545,7 +545,7 @@ export async function executeProposal(proposalId: string, userId: string) {
   const executionLog = await prisma.executionLog.create({
     data: {
       proposalId,
-      brandId: proposal.brandId,
+      credentialId: proposal.credentialId,
       executedByUserId: userId,
       platform: proposal.platform!,
       action: proposal.type as ExecutionAction,
@@ -561,7 +561,7 @@ export async function executeProposal(proposalId: string, userId: string) {
     await prisma.abTest.create({
       data: {
         proposalId,
-        brandId: proposal.brandId,
+        credentialId: proposal.credentialId,
         platform: proposal.platform!,
         controlAdId: dispatch.abTestSetup.controlAdId,
         controlAdSetId: dispatch.abTestSetup.controlAdSetId,

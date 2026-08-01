@@ -5,7 +5,7 @@ import { verifyOAuthState } from "@/lib/oauth/state";
 import { exchangeMetaCodeForShortLivedToken, exchangeForLongLivedToken } from "@/lib/oauth/meta";
 import { encryptSecret } from "@/lib/crypto";
 import { redirectForOAuthError } from "@/lib/oauth/errors";
-import { autoProvisionBrandsForConnection } from "@/lib/brands/autoProvision";
+import { autoProvisionAccountsForConnection } from "@/lib/accounts/autoProvision";
 
 async function fetchMetaAccountName(accessToken: string): Promise<string | null> {
   try {
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     // Cada conta descoberta ja vira sua propria marca automaticamente - nao bloqueia
     // o redirect se falhar, a pagina de conexoes tenta de novo no carregamento.
     try {
-      await autoProvisionBrandsForConnection(connection.id);
+      await autoProvisionAccountsForConnection(connection.id);
     } catch (error) {
       console.error("[auto-provision] falhou no callback Meta:", error);
     }

@@ -5,13 +5,8 @@ import { ProposalsBoard } from "@/components/proposals-board";
 import { PageHeader } from "@/components/page-header";
 import { toProposalView } from "@/lib/proposals/view";
 
-/**
- * Versao cross-marca de brands/[brandSlug]/proposals/page.tsx - mesma query, so sem
- * filtrar por uma marca so (usa a lista de marcas do usuario, mesmo padrao ja usado
- * em layout.tsx/notifications.ts) e anexando o brand em cada proposta (ProposalsBoard
- * aceita brand por item desde essa mudanca) pra dar pra saber de qual marca e cada
- * uma quando misturadas.
- */
+/** Todas as propostas do usuario, de todas as contas de anuncio dele. Cada proposta
+ * carrega o nome da conta a que pertence, ja que o board mistura contas diferentes. */
 export default async function ProposalsPage() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -19,34 +14,29 @@ export default async function ProposalsPage() {
   }
   const userId = session.user.id;
 
-  const brands = await prisma.brand.findMany({
-    where: { brandAccess: { some: { userId } } },
-    orderBy: { priorityOrder: "asc" },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      proposals: {
-        orderBy: { createdAt: "desc" },
-        include: { executions: { orderBy: { executedAt: "desc" }, take: 1 }, abTest: true },
-      },
+  const proposals = await prisma.proposal.findMany({
+    where: { credential: { providerConnection: { userId } } },
+    orderBy: { createdAt: "desc" },
+    include: {
+      executions: { orderBy: { executedAt: "desc" }, take: 1 },
+      abTest: true,
+      credential: { select: { id: true, label: true, externalAccountId: true } },
     },
   });
 
-  const proposalViews = brands
-    .flatMap((brand) =>
-      brand.proposals.map((proposal) => ({
-        ...toProposalView(proposal),
-        brand: { id: brand.id, name: brand.name, slug: brand.slug },
-      }))
-    )
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const proposalViews = proposals.map((proposal) => ({
+    ...toProposalView(proposal),
+    account: {
+      id: proposal.credential.id,
+      name: proposal.credential.label ?? proposal.credential.externalAccountId,
+    },
+  }));
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Propostas"
-        description="Toda ação que a JAMILE recomenda vira uma proposta aqui, de todas as suas marcas — nada é executado sem sua aprovação."
+        description="Toda ação que a JAMILE recomenda vira uma proposta aqui, de todas as suas contas — nada é executado sem sua aprovação."
       />
       <ProposalsBoard proposals={proposalViews} />
     </div>

@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { getAttentionItems } from "@/lib/notifications";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
@@ -16,14 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/change-password");
   }
 
-  const [brands, notifications] = await Promise.all([
-    prisma.brand.findMany({
-      where: { brandAccess: { some: { userId: session.user.id } } },
-      orderBy: { priorityOrder: "asc" },
-      select: { id: true, slug: true, name: true, status: true },
-    }),
-    getAttentionItems(session.user.id),
-  ]);
+  const notifications = await getAttentionItems(session.user.id);
 
   async function handleSignOut() {
     "use server";
@@ -38,14 +30,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           SidebarInset continuam irmaos diretos pro layout flex do Sidebar funcionar. */}
       <JamileProvider>
         <AppSidebar
-          brands={brands}
           userEmail={session.user.email!}
           isAdmin={session.user.role === "ADMIN"}
           pendingProposalsCount={notifications.length}
         />
         <SidebarInset>
           <AppHeader
-            brands={brands}
             userEmail={session.user.email!}
             onSignOut={handleSignOut}
             notifications={notifications}

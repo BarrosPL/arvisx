@@ -1,12 +1,5 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { BrandRole } from "@/generated/prisma/client";
-
-const ROLE_RANK: Record<BrandRole, number> = {
-  VIEWER: 1,
-  MANAGER: 2,
-  OWNER: 3,
-};
 
 export class UnauthorizedError extends Error {
   constructor(message = "Nao autenticado") {
@@ -56,31 +49,43 @@ export async function requireAdmin(): Promise<SessionUser> {
 }
 
 /**
- * Nucleo do brand firewall no nivel de acesso: confere se `userId` tem, no minimo, o
- * papel `minRole` na marca `brandId`, contra o BrandAccess real do banco. Extraido de
- * `requireBrandAccess` pra ser reutilizavel fora de um request HTTP (ex: tools de chat,
- * que so tem um userId em memoria - nunca um cookie de sessao pra ler via requireUser()).
- * Lanca ForbiddenError se o acesso nao existir ou o papel for insuficiente.
+ * Nucleo do controle de acesso a dado de anuncio: confere se a conta `credentialId`
+ * pertence a uma conexao OAuth do proprio `userId`.
+ *
+ * Substituiu o antigo assertBrandRole (que consultava BrandAccess) quando o conceito de
+ * "Marca" foi removido. A cadeia de posse agora e
+ * usuario -> ProviderConnection -> AdCredential, e nao ha mais papeis
+ * (VIEWER/MANAGER/OWNER) nem compartilhamento entre usuarios: quem conectou o login e o
+ * dono de tudo que veio dele. Fica fora de um request HTTP de proposito, pra ser
+ * chamavel tambem das tools de chat (que so tem um userId em memoria).
  */
-export async function assertBrandRole(userId: string, brandId: string, minRole: BrandRole = "VIEWER") {
-  const access = await prisma.brandAccess.findUnique({
-    where: { userId_brandId: { userId, brandId } },
+export async function assertAccountAccess(userId: string, credentialId: string) {
+  const credential = await prisma.adCredential.findUnique({
+    where: { id: credentialId },
+    include: { providerConnection: { select: { userId: true } } },
   });
 
-  if (!access || ROLE_RANK[access.role] < ROLE_RANK[minRole]) {
+  if (!credential || credential.providerConnection.userId !== userId) {
     throw new ForbiddenError();
   }
 
-  return access;
+  return credential;
 }
 
-/**
- * Garante que o usuario autenticado tem, no minimo, o papel `minRole` na marca `brandId`.
- * Esta e a checagem de brand firewall no nivel de acesso: nenhuma rota de marca deve
- * pular esta funcao.
- */
-export async function requireBrandAccess(brandId: string, minRole: BrandRole = "VIEWER") {
+/** Versao HTTP de assertAccountAccess - resolve o usuario da sessao. Nenhuma rota que
+ * toca dado de uma conta de anuncio deve pular esta funcao. */
+export async function requireAccountAccess(credentialId: string) {
   const user = await requireUser();
-  const access = await assertBrandRole(user.id, brandId, minRole);
-  return { user, access };
+  const credential = await assertAccountAccess(user.id, credentialId);
+  return { user, credential };
+}
+
+/** Ids de todas as contas de anuncio do usuario - usado onde a consulta e "tudo que e
+ * meu" (dashboard, notificacoes, roster do chat) em vez de uma conta especifica. */
+export async function listAccountIdsForUser(userId: string): Promise<string[]> {
+  const credentials = await prisma.adCredential.findMany({
+    where: { providerConnection: { userId } },
+    select: { id: true },
+  });
+  return credentials.map((credential) => credential.id);
 }

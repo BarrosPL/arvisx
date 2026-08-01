@@ -175,60 +175,60 @@ export type SearchPublicAdLibraryArgs = z.infer<typeof searchPublicAdLibraryArgs
 
 /**
  * Variantes "Chat" dos schemas acima - usadas so pelo chat por usuario
- * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a marca por
- * chamada em vez de uma marca fixa no contexto. Cada uma adiciona "brandId"
+ * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a conta por
+ * chamada em vez de uma conta fixa no contexto. Cada uma adiciona "accountId"
  * (obrigatorio) ao schema original; o resto dos campos e identico.
  */
 export const getRankingChatArgsSchema = z.object({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetRankingChatArgs = z.infer<typeof getRankingChatArgsSchema>;
 
 export const getMetricsChatArgsSchema = getMetricsArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetMetricsChatArgs = z.infer<typeof getMetricsChatArgsSchema>;
 
 export const getAdSetsChatArgsSchema = getAdSetsArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetAdSetsChatArgs = z.infer<typeof getAdSetsChatArgsSchema>;
 
 export const getCampaignsChatArgsSchema = getCampaignsArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetCampaignsChatArgs = z.infer<typeof getCampaignsChatArgsSchema>;
 
 export const getMetricsHistoryChatArgsSchema = getMetricsHistoryArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetMetricsHistoryChatArgs = z.infer<typeof getMetricsHistoryChatArgsSchema>;
 
 export const getAdBudgetChatArgsSchema = getAdBudgetArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetAdBudgetChatArgs = z.infer<typeof getAdBudgetChatArgsSchema>;
 
 export const getAdLibraryChatArgsSchema = getAdLibraryArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type GetAdLibraryChatArgs = z.infer<typeof getAdLibraryChatArgsSchema>;
 
 export const searchPublicAdLibraryChatArgsSchema = searchPublicAdLibraryArgsSchema.extend({
-  brandId: z.string(),
+  accountId: z.string(),
 });
 
 export type SearchPublicAdLibraryChatArgs = z.infer<typeof searchPublicAdLibraryChatArgsSchema>;
 
 export const proposalPayloadChatSchema = proposalPayloadObjectSchema
-  .extend({ brandId: z.string() })
+  .extend({ accountId: z.string() })
   .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] });
 
 export type ProposalPayloadChat = z.infer<typeof proposalPayloadChatSchema>;
@@ -236,10 +236,10 @@ export type ProposalPayloadChat = z.infer<typeof proposalPayloadChatSchema>;
 /**
  * Tools de decisao/execucao - so existem no caminho de chat (TOOL_DEFS_CHAT), nunca no
  * TOOL_DEFS usado pelo scheduler autonomo, entao nao precisam de uma variante "base" sem
- * brandId como as tools de leitura acima - ja nascem com brandId obrigatorio.
+ * accountId como as tools de leitura acima - ja nascem com accountId obrigatorio.
  */
 export const getProposalChatArgsSchema = z.object({
-  brandId: z.string(),
+  accountId: z.string(),
   proposalId: z.string(),
 });
 
@@ -248,7 +248,7 @@ export type GetProposalChatArgs = z.infer<typeof getProposalChatArgsSchema>;
 export const decideProposalDecisionSchema = z.enum(["approve", "reject", "test"]);
 
 const resolveProposalChatObjectSchema = z.object({
-  brandId: z.string(),
+  accountId: z.string(),
   proposalId: z.string(),
   decision: decideProposalDecisionSchema,
   note: z.string().min(1).optional(),
@@ -265,7 +265,7 @@ export const resolveProposalChatArgsSchema = resolveProposalChatObjectSchema.ref
 export type ResolveProposalChatArgs = z.infer<typeof resolveProposalChatArgsSchema>;
 
 export const adjustProposalChatArgsSchema = z.object({
-  brandId: z.string(),
+  accountId: z.string(),
   proposalId: z.string(),
   title: z.string().min(3).optional(),
   suggestedAction: z.string().min(3).optional(),
@@ -287,7 +287,7 @@ export const confirmAndExecuteActionChatArgsSchema = proposalPayloadChatSchema;
 export type ConfirmAndExecuteActionChatArgs = z.infer<typeof confirmAndExecuteActionChatArgsSchema>;
 
 export const deleteProposalChatArgsSchema = z.object({
-  brandId: z.string(),
+  accountId: z.string(),
   proposalId: z.string(),
 });
 

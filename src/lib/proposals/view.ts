@@ -30,9 +30,9 @@ export interface ProposalRecordForView {
 }
 
 /** Mapeia uma linha do Prisma (Proposal + executions/abTest incluidos) pro formato
- * que ProposalCard espera - reaproveitado pela pagina de propostas por marca e pela
- * pagina cross-marca (src/app/(app)/proposals/page.tsx), que so difere em nao
- * filtrar por brandId e em anexar o brand por item em vez de um so pro board inteiro. */
+ * que ProposalCard espera - reaproveitado pela pagina de propostas por conta e pela
+ * pagina com todas as contas (src/app/(app)/proposals/page.tsx), que so difere em nao
+ * filtrar por conta e em anexar a conta por item em vez de uma so pro board inteiro. */
 export function toProposalView(proposal: ProposalRecordForView): ProposalView {
   const payload = (proposal.payloadJson as { campaignPlan?: CampaignPlan } | null) ?? null;
 

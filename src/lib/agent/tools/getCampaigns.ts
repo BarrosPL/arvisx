@@ -10,10 +10,10 @@ import type { GetCampaignsArgs } from "@/lib/agent/schema";
  * - "results"/"cpr": o resultado ja resolvido pelo OBJETIVO da campanha, igual a
  *   coluna "Resultados" do Gerenciador de Anuncios (ver lib/ads/resultMetric.ts).
  */
-export async function getCampaigns(brandId: string, args: GetCampaignsArgs) {
+export async function getCampaigns(credentialId: string, args: GetCampaignsArgs) {
   const snapshots = await prisma.campaignMetricSnapshot.findMany({
     where: {
-      brandId,
+      credentialId,
       collectionState: "OK",
       ...(args.platform ? { platform: args.platform } : {}),
     },

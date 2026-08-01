@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireBrandAccess } from "@/lib/session";
+import { requireAccountAccess } from "@/lib/session";
 import { handleApiError } from "@/lib/http";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id } });
-    await requireBrandAccess(proposal.brandId, "MANAGER");
+    await requireAccountAccess(proposal.credentialId);
 
     if (proposal.type !== "NEW_CAMPAIGN") {
       throw new Error("Só propostas de campanha nova aceitam imagem de criativo");

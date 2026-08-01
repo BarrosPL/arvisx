@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { ProposalType, type Brand } from "@/generated/prisma/client";
-import { collectForBrand } from "@/lib/ads/collect";
-import { collectAdLibraryForBrand } from "@/lib/ads/collectLibrary";
+import { ProposalType } from "@/generated/prisma/client";
+import { collectAdMetricsForAccount } from "@/lib/ads/collect";
+import { collectAdLibraryForAccount } from "@/lib/ads/collectLibrary";
 import { fetchMetaInsights } from "@/lib/ads/meta";
 import { fetchGoogleAdsInsights } from "@/lib/ads/google";
 import { fetchMetaAdLibrary } from "@/lib/ads/metaLibrary";
@@ -12,7 +12,7 @@ import { evaluateProposalReadiness, deriveInitialStatus } from "@/lib/proposals/
 import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/lifecycle";
 import { runAutonomousBudgetProposal, runAutonomousNewCampaignScan } from "@/lib/agent/autonomous";
 
-type BrandOutcome = "proposal_created" | "no_action" | "skipped_recent" | "error";
+type AccountOutcome = "proposal_created" | "no_action" | "skipped_recent" | "error";
 
 let isRunning = false;
 
@@ -20,11 +20,11 @@ function rowKey(row: RecommendedAction["row"]): string | null {
   return row.platformAdId ?? row.platformCampaignId ?? null;
 }
 
-/** Ja existe uma proposta aberta pro mesmo problema (mesma marca/tipo/campanha ou anuncio)? */
-async function hasOpenDuplicate(brandId: string, type: ProposalType, key: string): Promise<boolean> {
+/** Ja existe uma proposta aberta pro mesmo problema (mesma conta/tipo/campanha ou anuncio)? */
+async function hasOpenDuplicate(credentialId: string, type: ProposalType, key: string): Promise<boolean> {
   const existing = await prisma.proposal.findFirst({
     where: {
-      brandId,
+      credentialId,
       type,
       status: { in: OPEN_PROPOSAL_STATUSES },
       OR: [{ platformAdId: key }, { platformCampaignId: key }],
@@ -35,11 +35,11 @@ async function hasOpenDuplicate(brandId: string, type: ProposalType, key: string
 }
 
 /** NEW_CAMPAIGN nao tem um anuncio/campanha existente pra chavear o dedup (e uma
- * campanha que ainda nao existe) - o dedup aqui e por marca: no maximo 1 sugestao de
+ * campanha que ainda nao existe) - o dedup aqui e por conta: no maximo 1 sugestao de
  * campanha nova aberta por vez, senao a cada rodada de 6h ela empilharia sugestoes. */
-async function hasOpenNewCampaignProposal(brandId: string): Promise<boolean> {
+async function hasOpenNewCampaignProposal(credentialId: string): Promise<boolean> {
   const existing = await prisma.proposal.findFirst({
-    where: { brandId, type: "NEW_CAMPAIGN", status: { in: OPEN_PROPOSAL_STATUSES } },
+    where: { credentialId, type: "NEW_CAMPAIGN", status: { in: OPEN_PROPOSAL_STATUSES } },
     select: { id: true },
   });
   return existing !== null;
@@ -52,7 +52,7 @@ async function hasOpenNewCampaignProposal(brandId: string): Promise<boolean> {
  * O dedup (hasOpenDuplicate) ja foi checado por quem chama, antes de decidir qual
  * caminho (deterministico ou agente autonomo) seguir.
  */
-async function createProposalFromAction(brandId: string, action: RecommendedAction): Promise<string> {
+async function createProposalFromAction(credentialId: string, action: RecommendedAction): Promise<string> {
   const metricsJson: Record<string, number> = {
     spend: action.row.spend,
     ctr: action.row.ctr,
@@ -74,7 +74,7 @@ async function createProposalFromAction(brandId: string, action: RecommendedActi
 
   const proposal = await prisma.proposal.create({
     data: {
-      brandId,
+      credentialId,
       threadId: null,
       createdByUserId: null,
       type: action.proposalType as ProposalType,
@@ -102,41 +102,46 @@ async function createProposalFromAction(brandId: string, action: RecommendedActi
  * valor) ou se deve passar pela JAMILE de verdade (Ajustar verba - precisa decidir
  * um numero com contexto, conforme pedido pelo Renan).
  */
+interface AccountForRound {
+  id: string;
+  name: string;
+}
+
 async function handleRecommendedAction(
-  brand: Pick<Brand, "id" | "name" | "topicKeywords" | "excludedKeywords">,
+  account: AccountForRound,
   action: RecommendedAction
 ): Promise<{ outcome: "proposal_created" | "skipped"; proposalId: string | null }> {
   const key = rowKey(action.row);
-  if (key && (await hasOpenDuplicate(brand.id, action.proposalType as ProposalType, key))) {
+  if (key && (await hasOpenDuplicate(account.id, action.proposalType as ProposalType, key))) {
     return { outcome: "skipped", proposalId: null };
   }
 
   if (action.proposalType === "ADJUST_BUDGET") {
-    const { proposalCreated, proposalId } = await runAutonomousBudgetProposal(brand, action);
+    const { proposalCreated, proposalId } = await runAutonomousBudgetProposal(account, action);
     return { outcome: proposalCreated ? "proposal_created" : "skipped", proposalId };
   }
 
-  const proposalId = await createProposalFromAction(brand.id, action);
+  const proposalId = await createProposalFromAction(account.id, action);
   return { outcome: "proposal_created", proposalId };
 }
 
-async function runBrandRound(
-  brand: Pick<Brand, "id" | "name" | "topicKeywords" | "excludedKeywords">
-): Promise<{ outcome: BrandOutcome; proposalId: string | null; errorMessage: string | null }> {
+async function runAccountRound(
+  account: AccountForRound
+): Promise<{ outcome: AccountOutcome; proposalId: string | null; errorMessage: string | null }> {
   try {
-    await collectForBrand(brand.id, "META", fetchMetaInsights);
-    await collectForBrand(brand.id, "GOOGLE", fetchGoogleAdsInsights);
+    await collectAdMetricsForAccount(account.id, "META", fetchMetaInsights);
+    await collectAdMetricsForAccount(account.id, "GOOGLE", fetchGoogleAdsInsights);
 
     // Biblioteca de anuncios e um complemento, nao pode derrubar a rodada (propostas)
     // se a API de listagem falhar por algum motivo - por isso best-effort a parte.
     try {
-      await collectAdLibraryForBrand(brand.id, "META", fetchMetaAdLibrary);
-      await collectAdLibraryForBrand(brand.id, "GOOGLE", fetchGoogleAdLibrary);
+      await collectAdLibraryForAccount(account.id, "META", fetchMetaAdLibrary);
+      await collectAdLibraryForAccount(account.id, "GOOGLE", fetchGoogleAdLibrary);
     } catch {
       // best-effort - ver comentario acima
     }
 
-    const snapshot = await computeAndSaveRanking(brand.id);
+    const snapshot = await computeAndSaveRanking(account.id);
     const actions = (snapshot.recommendedActionsJson as unknown as RecommendedAction[]) ?? [];
 
     let lastCreatedId: string | null = null;
@@ -144,7 +149,7 @@ async function runBrandRound(
     let skippedCount = 0;
 
     for (const action of actions) {
-      const result = await handleRecommendedAction(brand, action);
+      const result = await handleRecommendedAction(account, action);
       if (result.outcome === "proposal_created") {
         createdCount += 1;
         lastCreatedId = result.proposalId;
@@ -154,11 +159,11 @@ async function runBrandRound(
     }
 
     // Diferente do loop acima (uma decisao por anuncio/campanha ja existente), isto e
-    // uma decisao no nivel da MARCA - roda so 1x por rodada, nao por acao recomendada.
+    // uma decisao no nivel da CONTA - roda so 1x por rodada, nao por acao recomendada.
     // Pedido do Renan: quando achar oportunidade de campanha nova, sugerir no dashboard.
-    if (!(await hasOpenNewCampaignProposal(brand.id))) {
+    if (!(await hasOpenNewCampaignProposal(account.id))) {
       const { proposalCreated, proposalId: newCampaignProposalId } = await runAutonomousNewCampaignScan(
-        brand,
+        account,
         snapshot.verdict
       );
       if (proposalCreated) {
@@ -169,7 +174,7 @@ async function runBrandRound(
       }
     }
 
-    const outcome: BrandOutcome = createdCount > 0 ? "proposal_created" : skippedCount > 0 ? "skipped_recent" : "no_action";
+    const outcome: AccountOutcome = createdCount > 0 ? "proposal_created" : skippedCount > 0 ? "skipped_recent" : "no_action";
     return { outcome, proposalId: lastCreatedId, errorMessage: null };
   } catch (error) {
     return {
@@ -181,8 +186,8 @@ async function runBrandRound(
 }
 
 /**
- * Rodada proativa: para cada marca (ordem priorityOrder, igual ao n8n), recoleta dados
- * reais, recalcula o ranking e cria propostas para as recomendacoes ainda nao propostas.
+ * Rodada proativa: para cada conta de anuncio, recoleta dados reais, recalcula o ranking
+ * e cria propostas para as recomendacoes ainda nao propostas.
  * Nunca chama ads/metaWrite.ts ou googleWrite.ts - so analisa e propoe.
  */
 export async function runProactiveRound(): Promise<{ runId: string }> {
@@ -194,12 +199,17 @@ export async function runProactiveRound(): Promise<{ runId: string }> {
   const run = await prisma.schedulerRun.create({ data: { status: "running" } });
 
   try {
-    const brands = await prisma.brand.findMany({ orderBy: { priorityOrder: "asc" } });
+    const credentials = await prisma.adCredential.findMany({
+      where: { status: { not: "AUTH_ERROR" } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, label: true, externalAccountId: true },
+    });
 
-    for (const brand of brands) {
-      const { outcome, proposalId, errorMessage } = await runBrandRound(brand);
-      await prisma.schedulerBrandResult.create({
-        data: { schedulerRunId: run.id, brandId: brand.id, outcome, proposalId, errorMessage },
+    for (const credential of credentials) {
+      const account = { id: credential.id, name: credential.label ?? credential.externalAccountId };
+      const { outcome, proposalId, errorMessage } = await runAccountRound(account);
+      await prisma.schedulerAccountResult.create({
+        data: { schedulerRunId: run.id, credentialId: account.id, outcome, proposalId, errorMessage },
       });
     }
 

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Radio } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge, type StatusTone } from "@/components/status-badge";
@@ -8,8 +7,9 @@ import { formatCurrency, formatNumber } from "@/lib/format";
 
 export interface ActiveCampaignRow {
   key: string;
-  brandName: string;
-  brandSlug: string;
+  /** Nome da conta de anuncio (label da descoberta) - substituiu a marca, que deixou de
+   * existir como conceito. */
+  accountName: string;
   platform: "META" | "GOOGLE";
   campaignName: string;
   campaignStatus: string | null;
@@ -106,7 +106,7 @@ export function ActiveCampaignsTable({ rows }: { rows: ActiveCampaignRow[] }) {
           <TableHeader>
             <TableRow>
               <TableHead>Status</TableHead>
-              <TableHead>Marca</TableHead>
+              <TableHead>Conta</TableHead>
               <TableHead>Campanha</TableHead>
               <TableHead className="text-right">Resultado</TableHead>
               <TableHead className="text-right">CPR</TableHead>
@@ -123,13 +123,9 @@ export function ActiveCampaignsTable({ rows }: { rows: ActiveCampaignRow[] }) {
                   <StatusBadge tone={statusTone(row.campaignStatus)} label={statusLabel(row.campaignStatus)} />
                 </TableCell>
                 <TableCell className="max-w-40">
-                  <Link
-                    href={`/brands/${row.brandSlug}`}
-                    title={row.brandName}
-                    className="block truncate text-sm hover:underline"
-                  >
-                    {row.brandName}
-                  </Link>
+                  <span className="block truncate text-sm text-muted-foreground" title={row.accountName}>
+                    {row.accountName}
+                  </span>
                 </TableCell>
                 <TableCell className="max-w-56">
                   <div className="flex items-center gap-2">
@@ -177,9 +173,7 @@ export function ActiveCampaignsTable({ rows }: { rows: ActiveCampaignRow[] }) {
                 className="shrink-0"
               />
             </div>
-            <Link href={`/brands/${row.brandSlug}`} className="text-xs text-muted-foreground hover:underline">
-              {row.brandName}
-            </Link>
+            <span className="text-xs text-muted-foreground">{row.accountName}</span>
             <div className="grid grid-cols-3 gap-2 pt-1">
               <MobileStat label={resultLabel(row.resultType)} value={formatNumber(row.results)} />
               <MobileStat label="CPR" value={row.cpr !== null ? formatCurrency(row.cpr) : "—"} />

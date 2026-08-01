@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { requireBrandAccess, assertBrandRole } from "@/lib/session";
+import { requireAccountAccess, assertAccountAccess } from "@/lib/session";
 
 /**
  * Apaga uma proposta de verdade do banco (nao so esconde da tela) - pedido explicito
@@ -12,7 +12,7 @@ import { requireBrandAccess, assertBrandRole } from "@/lib/session";
  */
 export async function deleteProposalAsUser(userId: string, proposalId: string): Promise<void> {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  await assertBrandRole(userId, proposal.brandId, "MANAGER");
+  await assertAccountAccess(userId, proposal.credentialId);
 
   const executionCount = await prisma.executionLog.count({ where: { proposalId } });
   if (executionCount > 0) {
@@ -27,6 +27,6 @@ export async function deleteProposalAsUser(userId: string, proposalId: string): 
 /** Caminho usado pela rota REST (botão na tela) - resolve o usuario da sessao HTTP. */
 export async function deleteProposal(proposalId: string): Promise<void> {
   const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: proposalId } });
-  const { user } = await requireBrandAccess(proposal.brandId, "MANAGER");
+  const { user } = await requireAccountAccess(proposal.credentialId);
   return deleteProposalAsUser(user.id, proposalId);
 }

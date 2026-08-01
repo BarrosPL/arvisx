@@ -63,12 +63,12 @@ function buildSearchFilter(searchTerm: string): Prisma.AdCreativeWhereInput {
  * traz o CONTEUDO do anuncio (headline/texto), nao a metrica, e inclui anuncio pausado/
  * sem gasto recente tambem. Usa pra reconhecer padrao do que ja funcionou.
  */
-export async function getAdLibrary(brandId: string, args: GetAdLibraryArgs) {
+export async function getAdLibrary(credentialId: string, args: GetAdLibraryArgs) {
   const searchTerm = args.search?.trim();
 
   const creatives = await prisma.adCreative.findMany({
     where: {
-      brandId,
+      credentialId,
       ...(args.platform ? { platform: args.platform } : {}),
       ...(searchTerm ? buildSearchFilter(searchTerm) : {}),
     },
