@@ -6,20 +6,25 @@ const GRAPH_API_VERSION = "v21.0";
  * Camada de Publicos Personalizados (Custom Audiences) da Meta - base para a esteira de
  * frio/morno/quente/remarketing/1% pedida na spec de gestao de trafego. So cobre o que
  * foi CONFIRMADO na documentacao oficial da Meta (formato literal de cURL/JSON copiado
- * das paginas de referencia): criar audience CUSTOM (semente pra lookalike ou base pra
- * popular por fora), criar LOOKALIKE a partir de uma audience existente, listar, ler e
- * apagar.
+ * das paginas de referencia):
+ * - criar audience CUSTOM (semente pra lookalike ou base pra popular por fora)
+ * - criar LOOKALIKE a partir de uma audience existente ("1%" da spec)
+ * - criar audience de ENGAJAMENTO por Pagina/Lead Ad/Instagram/Instant Experience/
+ *   Shopping/AR, com inclusao E exclusao na mesma regra (createMetaEngagementAudience)
+ * - listar, ler e apagar
  *
- * O QUE FALTA DE PROPOSITO: criar audience de subtype ENGAGEMENT baseada em visualizacao
- * de video especifico (o mecanismo exato que moveria lead de "viu o video do frio" pra
- * "morno" automaticamente). O formato exato do campo `rule` pra esse caso (event_sources
- * tipo VIDEO, filtro de percentual assistido) nao apareceu de forma confiavel na
- * documentacao oficial nas paginas consultadas - nao adivinhei esse formato pra nao
- * arriscar criar um publico malformado (ou o Meta aceitar e o publico nunca popular
- * ninguem, o que e pior que dar erro na hora). Fica pendente de confirmacao - seja por
- * uma fonte de doc melhor, seja lendo de volta (GET com fields=rule) um publico de video
- * criado manualmente no Gerenciador de Anuncios, que revela o formato real que a propria
- * Meta usa.
+ * O QUE FALTA DE PROPOSITO: audience de engajamento por VIDEO ESPECIFICO (o mecanismo
+ * exato que moveria lead de "viu o video do frio" pra "morno" automaticamente, com
+ * granularidade por criativo e percentual assistido). A doc oficial confirma que "video"
+ * e uma fonte de evento separada (existe no produto, Gerenciador de Anuncios oferece
+ * "Video" como opcao de Engajamento), mas a pagina de referencia consultada ate agora
+ * ("Engagement Custom Audiences") so documenta em detalhe Page/Lead/IG/Canvas/Shopping/AR
+ * - video e so citado de passagem, sem o `type` de event_source nem o vocabulario de
+ * filtro (percentual assistido). Nao adivinhei esse formato pra nao arriscar criar um
+ * publico malformado (ou pior: o Meta aceitar e o publico nunca popular ninguem, que
+ * falha em silencio). Ate isso ser confirmado, PAGE_ENGAGEMENT_EVENTS.ENGAGED e o proxy
+ * mais proximo disponivel pra "Frio" (quem interagiu com a marca, nao especificamente
+ * com o video do gancho X).
  */
 
 interface MetaApiErrorResponse {
@@ -98,6 +103,122 @@ export interface CreateAudienceResult {
   ok: boolean;
   audienceId?: string;
   errorMessage?: string;
+}
+
+/**
+ * Eventos de engajamento com PAGINA confirmados na doc oficial ("Engagement Custom
+ * Audiences"). page_engaged e o mais abrangente (inclui todos os outros) - serve hoje
+ * como o proxy mais proximo de "Frio" da spec (quem interagiu com a marca) enquanto o
+ * formato de audience por VIDEO especifico nao e confirmado (ver nota no topo do
+ * arquivo). page_liked e especial: so ele aceita retentionSeconds=0 (sem expirar) e nao
+ * pode ser combinado com outro evento na mesma regra - a Meta rejeita a combinacao.
+ */
+export const PAGE_ENGAGEMENT_EVENTS = {
+  ENGAGED: "page_engaged",
+  VISITED: "page_visited",
+  LIKED: "page_liked",
+  MESSAGED: "page_messaged",
+  CTA_CLICKED: "page_cta_clicked",
+  SAVED: "page_or_post_save",
+  POST_INTERACTION: "page_post_interaction",
+} as const;
+
+/** Maximo de retencao por fonte, em DIAS - a Meta rejeita valor acima disso (exceto
+ * Page Likes, que e sempre 0/sem expirar). Confirmado na doc oficial. Nao e uma decisao
+ * de produto, e o teto que a propria Meta aplica; validar aqui da um erro claro em vez
+ * de deixar a chamada falhar la na Meta sem essa explicacao. */
+export const ENGAGEMENT_MAX_RETENTION_DAYS: Record<string, number> = {
+  page: 730,
+  ig_business: 730,
+  canvas: 730,
+  lead: 90,
+  ig_lead_generation: 90,
+  shopping_page: 365,
+  shopping_ig: 365,
+  ar_experience: 365,
+  ar_effects: 365,
+};
+
+export interface AudienceEventFilter {
+  field: string;
+  operator: string;
+  value: string;
+}
+
+export interface AudienceEngagementRule {
+  /** Tipo confirmado na doc: "page", "lead", "ig_lead_generation", "canvas",
+   * "ig_business", "shopping_page", "shopping_ig", "ar_experience", "ar_effects". Cada
+   * fonte tem seu proprio vocabulario de eventos (ver PAGE_ENGAGEMENT_EVENTS pra page). */
+  eventSourceType: string;
+  eventSourceIds: string[];
+  retentionDays: number;
+  /** Filtros combinados com AND (mesmo formato confirmado na doc: {field, operator, value}).
+   * O caso comum e um so filtro `{field: "event", operator: "eq", value: <evento>}`. */
+  filters: AudienceEventFilter[];
+}
+
+function buildEngagementRuleJson(rule: AudienceEngagementRule) {
+  return {
+    event_sources: rule.eventSourceIds.map((id) => ({ id, type: rule.eventSourceType })),
+    retention_seconds: rule.retentionDays * 86400,
+    filter: { operator: "and", filters: rule.filters },
+  };
+}
+
+/**
+ * Cria um publico de ENGAJAMENTO (Pagina, Lead Ad, Instagram, Instant Experience,
+ * Shopping, AR) - formato confirmado na doc oficial ("Engagement Custom Audiences"),
+ * copiado literalmente: `rule.inclusions.rules[]` (OR entre regras) e
+ * `rule.exclusions.rules[]` opcional (mesmo formato, ex: "engajou com a Pagina MAS
+ * exclui quem ja clicou o CTA" - e o mecanismo de exclusao embutido NA PROPRIA
+ * audience, diferente de excluded_custom_audiences no targeting do AdSet, que exclui
+ * publicos inteiros ja existentes de OUTRO conjunto).
+ *
+ * NAO cobre engajamento por VIDEO especifico (ver nota no topo do arquivo) - so as
+ * fontes de evento listadas no tipo AudienceEngagementRule.eventSourceType.
+ */
+export async function createMetaEngagementAudience(
+  credential: PlatformCredential,
+  params: { name: string; inclusionRules: AudienceEngagementRule[]; exclusionRules?: AudienceEngagementRule[]; prefill?: boolean }
+): Promise<CreateAudienceResult> {
+  const account = toAccountId(credential.externalAccountId);
+
+  for (const rule of [...params.inclusionRules, ...(params.exclusionRules ?? [])]) {
+    const max = ENGAGEMENT_MAX_RETENTION_DAYS[rule.eventSourceType];
+    if (max !== undefined && rule.retentionDays > max) {
+      return {
+        ok: false,
+        errorMessage: `retentionDays=${rule.retentionDays} excede o maximo da Meta para "${rule.eventSourceType}" (${max} dias)`,
+      };
+    }
+  }
+
+  const ruleJson: Record<string, unknown> = {
+    inclusions: { operator: "or", rules: params.inclusionRules.map(buildEngagementRuleJson) },
+  };
+  if (params.exclusionRules && params.exclusionRules.length > 0) {
+    ruleJson.exclusions = { operator: "or", rules: params.exclusionRules.map(buildEngagementRuleJson) };
+  }
+
+  const body = {
+    name: params.name,
+    rule: JSON.stringify(ruleJson),
+    prefill: params.prefill === false ? "0" : "1",
+  };
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${account}/customaudiences?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      return { ok: false, errorMessage: formatMetaApiError(result, response) };
+    }
+    return { ok: true, audienceId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
 }
 
 /**
