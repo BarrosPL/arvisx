@@ -12,7 +12,20 @@ export async function getProposal(credentialId: string, proposalId: string) {
     throw new Error("Essa proposta não pertence à marca informada.");
   }
 
-  const payload = proposal.payloadJson as { campaignPlan?: unknown } | null;
+  const payload = proposal.payloadJson as { campaignPlan?: unknown; funnelPlan?: unknown } | null;
+
+  const funnelLayersStatus =
+    proposal.type === "NEW_FUNNEL"
+      ? (
+          await prisma.proposalFunnelLayer.findMany({
+            where: { proposalId },
+            select: { layerKey: true, creativeAssetData: true, creativeVideoData: true, creativeCoverImageData: true },
+          })
+        ).map((layer) => ({
+          layerKey: layer.layerKey,
+          hasCreativeAsset: layer.creativeAssetData !== null || (layer.creativeVideoData !== null && layer.creativeCoverImageData !== null),
+        }))
+      : undefined;
 
   return {
     id: proposal.id,
@@ -28,12 +41,16 @@ export async function getProposal(credentialId: string, proposalId: string) {
     platformAdId: proposal.platformAdId,
     metricsJson: proposal.metricsJson,
     campaignPlan: proposal.type === "NEW_CAMPAIGN" ? (payload?.campaignPlan ?? null) : undefined,
+    funnelPlan: proposal.type === "NEW_FUNNEL" ? (payload?.funnelPlan ?? null) : undefined,
     // Duas fontes possiveis de criativo - imagem OU video+capa, nunca as duas na mesma
     // proposta (ver schema.prisma). Contam como "ja tem criativo" as duas.
     hasCreativeAsset:
       proposal.type === "NEW_CAMPAIGN"
         ? proposal.creativeAssetData !== null || (proposal.creativeVideoData !== null && proposal.creativeCoverImageData !== null)
         : undefined,
+    // So preenchido pra NEW_FUNNEL - status por camada, pra UI mostrar quantas ja tem
+    // criativo sem precisar de outra chamada.
+    funnelLayersStatus,
     decisionNote: proposal.decisionNote,
     createdAt: proposal.createdAt,
   };

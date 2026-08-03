@@ -64,12 +64,33 @@ enum MessageRole {
 
 enum ProposalType {
   NEW_CAMPAIGN
+  // Esteira completa da spec-gestor-trafego-ia.md (secao 1): 5 campanhas Meta
+  // nascendo juntas (Frio/Morno/Quente/Remarketing/1%), com publico e exclusao
+  // cruzada entre camadas - NEW_CAMPAIGN continua existindo separado pra campanha
+  // avulsa (unica, sem esteira), nunca reaproveitado pra isto.
+  NEW_FUNNEL
   PAUSE_AD
   ACTIVATE_AD
   ADJUST_BUDGET
   CREATE_AD_VARIATION
   CREATE_AB_TEST
   OTHER
+
+  @@schema("arvisx")
+}
+
+/**
+ * As 5 camadas da esteira, nesta ordem fixa (topo -> fundo -> escala). Remarketing
+ * aqui e UMA camada so - as sub-janelas de 20/60/120 dias da secao 2 da spec (mensagem
+ * diferente em cada etapa) ficam pra uma iteracao futura, nao fazem parte desta
+ * primeira versao (ver comentario no executor sobre o motivo).
+ */
+enum FunnelLayerKey {
+  FRIO
+  MORNO
+  QUENTE
+  REMARKETING
+  LOOKALIKE
 
   @@schema("arvisx")
 }
@@ -94,6 +115,7 @@ enum ExecutionAction {
   CREATE_AD_VARIATION
   CREATE_AB_TEST
   NEW_CAMPAIGN
+  NEW_FUNNEL
 
   @@schema("arvisx")
 }
@@ -457,14 +479,67 @@ model Proposal {
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
 
-  credential AdCredential        @relation(fields: [credentialId], references: [id], onDelete: Cascade)
-  thread     ConversationThread? @relation(fields: [threadId], references: [id])
-  createdBy  User?               @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
-  decidedBy  User?               @relation("ProposalDecidedBy", fields: [decidedByUserId], references: [id])
-  executions ExecutionLog[]
-  abTest     AbTest?
+  credential   AdCredential          @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  thread       ConversationThread?   @relation(fields: [threadId], references: [id])
+  createdBy    User?                 @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
+  decidedBy    User?                 @relation("ProposalDecidedBy", fields: [decidedByUserId], references: [id])
+  executions   ExecutionLog[]
+  abTest       AbTest?
+  // So preenchido quando type=NEW_FUNNEL - as 5 linhas (uma por FunnelLayerKey) com o
+  // texto/criativo de cada camada. NEW_CAMPAIGN continua usando os campos creative* do
+  // Proposal direto, sem nenhuma linha aqui.
+  funnelLayers ProposalFunnelLayer[]
 
   @@index([credentialId, status])
+  @@schema("arvisx")
+}
+
+/**
+ * Uma camada da esteira (FRIO/MORNO/QUENTE/REMARKETING/LOOKALIKE) dentro de uma
+ * proposta NEW_FUNNEL - motivo de ser tabela separada, nao mais um JSON dentro de
+ * payloadJson: cada camada precisa do PROPRIO criativo (o Renan pediu 5 uploads
+ * distintos, um gancho por camada - secao 3 da spec), e Bytes nao cabe bem dentro de
+ * JSON. O padrao imagem-OU-video espelha exatamente os mesmos 6 campos que Proposal ja
+ * tem pro caminho unico de NEW_CAMPAIGN.
+ */
+model ProposalFunnelLayer {
+  id                    String         @id @default(cuid())
+  proposalId            String
+  layerKey              FunnelLayerKey
+  campaignName          String
+  // Fatia ja calculada (ver lib/ads/funnelBudget.ts) a partir do orcamento TOTAL da
+  // proposta - o Renan pensa em "quanto por dia pro produto todo", nao camada por
+  // camada.
+  dailyBudgetMinorUnits Int
+  headline              String
+  primaryText           String
+  description           String
+  callToAction          String
+
+  creativeAssetData          Bytes?
+  creativeAssetMimeType      String?
+  creativeVideoData          Bytes?
+  creativeVideoMimeType      String?
+  creativeCoverImageData     Bytes?
+  creativeCoverImageMimeType String?
+
+  // Preenchidos so depois de executar - cada camada e uma Campanha/AdSet/Ad Meta real e
+  // independente das outras (nao existe 1 campanha "esteira", sao 5 campanhas normais
+  // ligadas so pela audiencia de exclusao entre elas).
+  platformCampaignId String?
+  platformAdSetId    String?
+  platformAdId       String?
+  // Id do publico personalizado CRIADO pra esta camada (audiencia de quem entra nela) -
+  // outras camadas referenciam este id no proprio targeting.excludedCustomAudienceIds
+  // delas, o mecanismo real de "quem ja esta aqui nao ve a camada anterior de novo".
+  customAudienceId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, layerKey])
   @@schema("arvisx")
 }
 

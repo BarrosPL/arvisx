@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { deriveInitialStatus, evaluateProposalReadiness, MISSING_CREATIVE_ASSET_LABEL } from "./dataEnforcement";
+import {
+  deriveInitialStatus,
+  evaluateProposalReadiness,
+  MISSING_CREATIVE_ASSET_LABEL,
+  MISSING_FUNNEL_CREATIVE_ASSETS_LABEL,
+} from "./dataEnforcement";
 
 describe("evaluateProposalReadiness", () => {
   it("marca campanha nova no Meta como faltando dado até um humano anexar a imagem do anúncio", () => {
@@ -12,6 +17,19 @@ describe("evaluateProposalReadiness", () => {
     });
     expect(result.ready).toBe(false);
     expect(result.missing).toEqual([MISSING_CREATIVE_ASSET_LABEL]);
+    expect(deriveInitialStatus(result)).toBe("NEEDS_MORE_DATA");
+  });
+
+  it("marca funil novo (5 camadas, so Meta) como faltando os criativos das 5 camadas", () => {
+    const result = evaluateProposalReadiness({
+      type: "NEW_FUNNEL",
+      platform: "META",
+      platformCampaignId: null,
+      platformAdId: null,
+      metricsJson: null,
+    });
+    expect(result.ready).toBe(false);
+    expect(result.missing).toEqual([MISSING_FUNNEL_CREATIVE_ASSETS_LABEL]);
     expect(deriveInitialStatus(result)).toBe("NEEDS_MORE_DATA");
   });
 

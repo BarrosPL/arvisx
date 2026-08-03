@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const proposalTypeSchema = z.enum([
   "NEW_CAMPAIGN",
+  "NEW_FUNNEL",
   "PAUSE_AD",
   "ACTIVATE_AD",
   "ADJUST_BUDGET",
@@ -82,6 +83,53 @@ export const campaignPlanSchema = z
 
 export type CampaignPlan = z.infer<typeof campaignPlanSchema>;
 
+/** As 5 camadas, nesta ordem fixa - mesmos valores do enum FunnelLayerKey do Prisma
+ * (duplicado aqui de proposito, como o resto deste arquivo faz com todo enum vindo do
+ * banco - agent/schema.ts fica sem depender do client gerado). */
+export const funnelLayerKeySchema = z.enum(["FRIO", "MORNO", "QUENTE", "REMARKETING", "LOOKALIKE"]);
+const FUNNEL_LAYER_KEYS = funnelLayerKeySchema.options;
+
+/** Texto/criativo de UMA camada - cada camada tem seu proprio gancho (spec-gestor-
+ * trafego-ia.md secao 3), nao reaproveita o mesmo texto/CTA da campanha inteira. O
+ * criativo em si (imagem/video) e anexado depois por um humano, igual campaignPlan -
+ * a JAMILE nunca gera/promete imagem nem video. */
+export const funnelLayerPlanSchema = z.object({
+  layerKey: funnelLayerKeySchema,
+  campaignName: z.string().min(3),
+  headline: z.string().min(3),
+  primaryText: z.string().min(10),
+  description: z.string().min(3),
+  callToAction: z.enum(META_CTA_TYPES),
+});
+
+/**
+ * Plano da esteira completa (so type=NEW_FUNNEL, so Meta - a esteira depende de Custom
+ * Audiences, implementado so pra Meta nesta versao). totalDailyBudget e o total do
+ * PRODUTO (decisao confirmada com o Renan) - a divisao entre camadas acontece depois,
+ * em lib/ads/funnelBudget.ts, nunca aqui no payload.
+ */
+export const funnelPlanSchema = z
+  .object({
+    productName: z.string().min(3),
+    finalUrl: z.string().url(),
+    totalDailyBudget: z.number().positive(),
+    // So usado pra semear a camada FRIO (topo de funil, ainda sem audiencia propria) -
+    // Morno/Quente/Remarketing/1% usam Custom Audience, nao interesse (ver executor.ts).
+    metaTargeting: z.object({
+      countries: z.array(z.string()).min(1),
+      ageMin: z.number().min(18).max(65),
+      ageMax: z.number().min(18).max(65),
+      interests: z.array(z.string()).min(1),
+    }),
+    layers: z.array(funnelLayerPlanSchema).length(5),
+  })
+  .refine((plan) => new Set(plan.layers.map((l) => l.layerKey)).size === FUNNEL_LAYER_KEYS.length, {
+    message: `layers precisa ter exatamente uma entrada de cada: ${FUNNEL_LAYER_KEYS.join(", ")}`,
+    path: ["layers"],
+  });
+
+export type FunnelPlan = z.infer<typeof funnelPlanSchema>;
+
 /** Forma base do payload (ZodObject puro, sem refine) - `proposalPayloadChatSchema` precisa
  * partir daqui com `.extend()` antes de aplicar o refine de NEW_CAMPAIGN (ZodEffects, o tipo
  * que sai de `.refine()`, nao tem `.extend()`). */
@@ -98,16 +146,19 @@ const proposalPayloadObjectSchema = z.object({
   platformAdId: z.string().nullable(),
   platformAdSetId: z.string().nullable(),
   campaignPlan: campaignPlanSchema.optional(),
+  funnelPlan: funnelPlanSchema.optional(),
 });
 
 const requireCampaignPlanForNewCampaign = (payload: { type: string; campaignPlan?: unknown }) =>
   payload.type !== "NEW_CAMPAIGN" || payload.campaignPlan !== undefined;
 
+const requireFunnelPlanForNewFunnel = (payload: { type: string; funnelPlan?: unknown }) =>
+  payload.type !== "NEW_FUNNEL" || payload.funnelPlan !== undefined;
+
 /** Payload estruturado que a tool `propose_action` recebe do modelo. */
-export const proposalPayloadSchema = proposalPayloadObjectSchema.refine(requireCampaignPlanForNewCampaign, {
-  message: "NEW_CAMPAIGN exige campaignPlan",
-  path: ["campaignPlan"],
-});
+export const proposalPayloadSchema = proposalPayloadObjectSchema
+  .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] })
+  .refine(requireFunnelPlanForNewFunnel, { message: "NEW_FUNNEL exige funnelPlan", path: ["funnelPlan"] });
 
 export type ProposalPayload = z.infer<typeof proposalPayloadSchema>;
 
@@ -286,7 +337,8 @@ export type ListCustomAudiencesChatArgs = z.infer<typeof listCustomAudiencesChat
 
 export const proposalPayloadChatSchema = proposalPayloadObjectSchema
   .extend({ accountId: z.string() })
-  .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] });
+  .refine(requireCampaignPlanForNewCampaign, { message: "NEW_CAMPAIGN exige campaignPlan", path: ["campaignPlan"] })
+  .refine(requireFunnelPlanForNewFunnel, { message: "NEW_FUNNEL exige funnelPlan", path: ["funnelPlan"] });
 
 export type ProposalPayloadChat = z.infer<typeof proposalPayloadChatSchema>;
 

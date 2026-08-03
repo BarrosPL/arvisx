@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { MISSING_CREATIVE_ASSET_LABEL } from "@/lib/proposals/dataEnforcement";
+import { MISSING_CREATIVE_ASSET_LABEL, MISSING_FUNNEL_CREATIVE_ASSETS_LABEL } from "@/lib/proposals/dataEnforcement";
 
 type MessageRole = "USER" | "ASSISTANT" | "TOOL" | "SYSTEM";
 
@@ -109,6 +109,33 @@ function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: s
       parsed.type === "NEW_CAMPAIGN" &&
       parsed.status === "NEEDS_MORE_DATA" &&
       parsed.hasCreativeAsset === false
+    ) {
+      return { proposalId: parsed.id };
+    }
+  }
+  return null;
+}
+
+/** Mesma ideia de pendingCreativeAssetProposal, pra NEW_FUNNEL (5 camadas) - abre
+ * ChatFunnelAssetPicker em vez do de proposta unica. get_proposal nao precisa checar
+ * funnelLayersStatus aqui: NEEDS_MORE_DATA numa NEW_FUNNEL so acontece por falta de
+ * criativo (ver dataEnforcement.ts), nunca por outro motivo. */
+function pendingFunnelAssetProposal(tools: ChatMessageView[]): { proposalId: string } | null {
+  for (const tool of tools) {
+    const parsed = parseToolContent(tool);
+    if (!parsed) continue;
+    if (
+      (tool.toolName === "propose_action" || tool.toolName === "confirm_and_execute_action") &&
+      typeof parsed.proposalId === "string"
+    ) {
+      const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
+      if (missing.includes(MISSING_FUNNEL_CREATIVE_ASSETS_LABEL)) return { proposalId: parsed.proposalId };
+    }
+    if (
+      tool.toolName === "get_proposal" &&
+      typeof parsed.id === "string" &&
+      parsed.type === "NEW_FUNNEL" &&
+      parsed.status === "NEEDS_MORE_DATA"
     ) {
       return { proposalId: parsed.id };
     }
@@ -365,6 +392,158 @@ function ChatCreativeAssetPicker({ proposalId }: { proposalId: string }) {
   );
 }
 
+const FUNNEL_LAYER_ORDER = ["FRIO", "MORNO", "QUENTE", "REMARKETING", "LOOKALIKE"] as const;
+const FUNNEL_LAYER_LABELS: Record<(typeof FUNNEL_LAYER_ORDER)[number], string> = {
+  FRIO: "Frio",
+  MORNO: "Morno",
+  QUENTE: "Quente",
+  REMARKETING: "Remarketing",
+  LOOKALIKE: "1% (Lookalike)",
+};
+
+/**
+ * Uma linha do uploader de funil - imagem OU video+capa pra UMA camada, reaproveitando
+ * a mesma rota /funnel-layer-asset pros dois formatos (o `layerKey` que diferencia).
+ * Menor/mais compacto que ChatCreativeAssetPicker de proposito - aqui aparecem 5 de
+ * uma vez, o par inteiro nao cabe no mesmo espaço.
+ */
+function ChatFunnelLayerUpload({
+  proposalId,
+  layerKey,
+  onDone,
+}: {
+  proposalId: string;
+  layerKey: (typeof FUNNEL_LAYER_ORDER)[number];
+  onDone: () => void;
+}) {
+  const [format, setFormat] = useState<"image" | "video" | null>(null);
+  const [done, setDone] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+
+  async function upload(body: Record<string, string>) {
+    setIsUploading(true);
+    try {
+      const response = await fetch(`/api/proposals/${proposalId}/funnel-layer-asset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ layerKey, ...body }),
+      });
+      const parsedBody = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(parsedBody.error ?? `Falha ao anexar criativo de ${FUNNEL_LAYER_LABELS[layerKey]}.`);
+        return;
+      }
+      setDone(true);
+      onDone();
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleImageUpload() {
+    if (!imageFile) return;
+    const dataBase64 = await fileToBase64(imageFile);
+    await upload({ dataBase64, mimeType: imageFile.type });
+  }
+
+  async function handleVideoUpload() {
+    if (!videoFile || !coverFile) return;
+    const [videoBase64, coverImageBase64] = await Promise.all([fileToBase64(videoFile), fileToBase64(coverFile)]);
+    await upload({ videoBase64, videoMimeType: videoFile.type, coverImageBase64, coverImageMimeType: coverFile.type });
+  }
+
+  if (done) {
+    return (
+      <div className="flex items-center gap-2 text-xs">
+        <span className="w-28 shrink-0 font-medium">{FUNNEL_LAYER_LABELS[layerKey]}</span>
+        <span className="text-success">Anexado</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border px-2 py-1.5 text-xs">
+      <span className="font-medium">{FUNNEL_LAYER_LABELS[layerKey]}</span>
+      {format === null ? (
+        <div className="flex gap-1.5">
+          <button type="button" onClick={() => setFormat("image")} className="rounded-full border px-2 py-0.5 transition-colors hover:bg-muted">
+            Imagem
+          </button>
+          <button type="button" onClick={() => setFormat("video")} className="rounded-full border px-2 py-0.5 transition-colors hover:bg-muted">
+            Vídeo
+          </button>
+        </div>
+      ) : format === "image" ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+            className="max-w-32 text-[10px] file:mr-1 file:rounded-full file:border-0 file:bg-foreground file:px-1.5 file:py-0.5 file:text-[9px] file:font-medium file:text-background"
+          />
+          <button
+            type="button"
+            onClick={handleImageUpload}
+            disabled={!imageFile || isUploading}
+            className="rounded-full bg-primary px-2 py-0.5 font-medium text-primary-foreground disabled:opacity-50"
+          >
+            Anexar
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-start gap-1">
+          <input
+            type="file"
+            accept="video/mp4,video/quicktime"
+            onChange={(event) => setVideoFile(event.target.files?.[0] ?? null)}
+            className="max-w-32 text-[10px] file:mr-1 file:rounded-full file:border-0 file:bg-foreground file:px-1.5 file:py-0.5 file:text-[9px] file:font-medium file:text-background"
+          />
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)}
+            className="max-w-32 text-[10px] file:mr-1 file:rounded-full file:border-0 file:bg-foreground file:px-1.5 file:py-0.5 file:text-[9px] file:font-medium file:text-background"
+          />
+          <button
+            type="button"
+            onClick={handleVideoUpload}
+            disabled={!videoFile || !coverFile || isUploading}
+            className="rounded-full bg-primary px-2 py-0.5 font-medium text-primary-foreground disabled:opacity-50"
+          >
+            Anexar
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** As 5 camadas de uma proposta NEW_FUNNEL, cada uma com seu proprio uploader - a
+ * proposta so sai de NEEDS_MORE_DATA quando as 5 tiverem algum criativo (a rota
+ * /funnel-layer-asset checa isso a cada upload, ver route.ts). */
+function ChatFunnelAssetPicker({ proposalId }: { proposalId: string }) {
+  const [doneCount, setDoneCount] = useState(0);
+  const allDone = doneCount >= FUNNEL_LAYER_ORDER.length;
+
+  return (
+    <div className="flex w-fit flex-col gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 p-2">
+      <p className="text-xs font-medium">
+        {allDone
+          ? "Todos os criativos anexados — proposta liberada para aprovação."
+          : `Anexe o criativo de cada camada (${doneCount}/${FUNNEL_LAYER_ORDER.length}):`}
+      </p>
+      {!allDone
+        ? FUNNEL_LAYER_ORDER.map((layerKey) => (
+            <ChatFunnelLayerUpload key={layerKey} proposalId={proposalId} layerKey={layerKey} onDone={() => setDoneCount((c) => c + 1)} />
+          ))
+        : null}
+    </div>
+  );
+}
+
 /**
  * "Nova conversa" - arquiva a thread atual (nunca apaga, ver startNewUserThread em
  * orchestrator.ts) e limpa a tela. Confirmação inline de 2 cliques, mesmo padrão já
@@ -446,6 +625,7 @@ export function ChatPanel({
   autoSend,
   autoSendContextProposalId,
   autoSendNeedsCreativeAsset,
+  autoSendNeedsFunnelAssets,
   onAutoSent,
 }: {
   initialMessages: ChatMessageView[];
@@ -465,6 +645,8 @@ export function ChatPanel({
    * sem depender de nenhuma tool call ter acontecido no turno (o contexto estrutural
    * injetado no backend pode fazer a JAMILE responder sem chamar get_proposal). */
   autoSendNeedsCreativeAsset?: boolean;
+  /** Mesma ideia, pra NEW_FUNNEL (5 camadas) - mostra o uploader das 5 camadas fixo. */
+  autoSendNeedsFunnelAssets?: boolean;
   onAutoSent?: () => void;
 }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -475,6 +657,9 @@ export function ChatPanel({
   // precisa de useEffect nenhum pra isto.
   const [pinnedCreativeAssetProposalId] = useState<string | null>(
     autoSendNeedsCreativeAsset && autoSendContextProposalId ? autoSendContextProposalId : null
+  );
+  const [pinnedFunnelAssetProposalId] = useState<string | null>(
+    autoSendNeedsFunnelAssets && autoSendContextProposalId ? autoSendContextProposalId : null
   );
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -585,6 +770,7 @@ export function ChatPanel({
           }
           const proposalInfo = createdProposalInfo(item.tools);
           const pendingAsset = pendingCreativeAssetProposal(item.tools);
+          const pendingFunnelAsset = pendingFunnelAssetProposal(item.tools);
           return (
             <div key={item.message.id} className="flex flex-col gap-1.5 self-start">
               {item.tools.length > 0 ? <ToolStepsGroup tools={item.tools} /> : null}
@@ -595,6 +781,7 @@ export function ChatPanel({
                 {item.message.content}
               </div>
               {pendingAsset ? <ChatCreativeAssetPicker proposalId={pendingAsset.proposalId} /> : null}
+              {pendingFunnelAsset ? <ChatFunnelAssetPicker proposalId={pendingFunnelAsset.proposalId} /> : null}
               {proposalInfo ? (
                 <Link
                   href="/proposals"
@@ -620,6 +807,12 @@ export function ChatPanel({
         <div className="border-t px-3 py-2">
           <p className="mb-1.5 text-xs text-muted-foreground">Anexe o criativo desta proposta:</p>
           <ChatCreativeAssetPicker proposalId={pinnedCreativeAssetProposalId} />
+        </div>
+      ) : null}
+
+      {pinnedFunnelAssetProposalId ? (
+        <div className="border-t px-3 py-2">
+          <ChatFunnelAssetPicker proposalId={pinnedFunnelAssetProposalId} />
         </div>
       ) : null}
 

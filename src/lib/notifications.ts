@@ -19,6 +19,12 @@ export interface AttentionEntry {
    * injetado em runAgentTurn pode fazer a JAMILE responder sem nunca chamar
    * get_proposal - ver orchestrator.ts). */
   needsCreativeAsset?: boolean;
+  /** true so quando a entrada e uma NEW_FUNNEL (esteira de 5 camadas) parada
+   * esperando os criativos - mesma ideia de needsCreativeAsset, so que abre o
+   * uploader das 5 camadas em vez do de proposta unica. Sempre true pra NEW_FUNNEL em
+   * NEEDS_MORE_DATA - dataEnforcement.ts nunca marca essa combinacao por outro motivo,
+   * entao nao precisa checar layer por layer aqui. */
+  needsFunnelAssets?: boolean;
 }
 
 function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
@@ -90,6 +96,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           proposal.platform === "META" &&
           !proposal.creativeAssetData &&
           !(proposal.creativeVideoData && proposal.creativeCoverImageData);
+        const needsFunnelAssets = proposal.type === "NEW_FUNNEL";
         items.push({
           key: `data-${proposal.id}`,
           tone: "warning",
@@ -98,6 +105,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           prefill: `Me explica a proposta "${proposal.title}" que está aguardando dado.`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
+          needsFunnelAssets,
           needsCreativeAsset,
         });
       } else {

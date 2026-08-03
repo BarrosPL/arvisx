@@ -65,7 +65,7 @@ const ACCOUNT_ID_PARAM = {
 const PROPOSAL_PAYLOAD_PROPERTIES = {
   type: {
     type: "string",
-    enum: ["NEW_CAMPAIGN", "PAUSE_AD", "ACTIVATE_AD", "ADJUST_BUDGET", "CREATE_AD_VARIATION", "CREATE_AB_TEST", "OTHER"],
+    enum: ["NEW_CAMPAIGN", "NEW_FUNNEL", "PAUSE_AD", "ACTIVATE_AD", "ADJUST_BUDGET", "CREATE_AD_VARIATION", "CREATE_AB_TEST", "OTHER"],
   },
   title: { type: "string" },
   reason: { type: "string", description: "Justificativa citando dado real ou HIPOTESE explicita." },
@@ -141,6 +141,50 @@ const PROPOSAL_PAYLOAD_PROPERTIES = {
       },
     },
     required: ["campaignName", "dailyBudget", "headline", "primaryText", "description", "callToAction", "finalUrl"],
+    additionalProperties: false,
+  },
+  funnelPlan: {
+    type: "object",
+    description:
+      "Obrigatorio para NEW_FUNNEL (so Meta) - a esteira completa de 5 camadas da spec de gestao de trafego (Frio/Morno/Quente/Remarketing/1%), nascendo juntas. totalDailyBudget e o orcamento TOTAL do produto - o sistema divide entre as 5 camadas sozinho (nunca pergunte/calcule a fatia de cada uma). metaTargeting.interests so e usado na camada FRIO (topo de funil sem audiencia propria ainda) - as outras 4 usam publico de engajamento criado automaticamente na hora de executar, nao interesse. layers precisa ter EXATAMENTE uma entrada de cada layerKey (FRIO, MORNO, QUENTE, REMARKETING, LOOKALIKE), cada uma com seu PROPRIO gancho/texto - nunca repita o mesmo headline/primaryText nas 5. O criativo (imagem ou video) de cada camada e anexado por um humano depois, voce nunca gera/promete criativo.",
+    properties: {
+      productName: { type: "string" },
+      finalUrl: { type: "string", format: "uri" },
+      totalDailyBudget: { type: "number", exclusiveMinimum: 0 },
+      metaTargeting: {
+        type: "object",
+        properties: {
+          countries: { type: "array", items: { type: "string" }, minItems: 1 },
+          ageMin: { type: "integer", minimum: 18, maximum: 65 },
+          ageMax: { type: "integer", minimum: 18, maximum: 65 },
+          interests: { type: "array", items: { type: "string" }, minItems: 1 },
+        },
+        required: ["countries", "ageMin", "ageMax", "interests"],
+        additionalProperties: false,
+      },
+      layers: {
+        type: "array",
+        minItems: 5,
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            layerKey: { type: "string", enum: ["FRIO", "MORNO", "QUENTE", "REMARKETING", "LOOKALIKE"] },
+            campaignName: { type: "string" },
+            headline: { type: "string" },
+            primaryText: { type: "string" },
+            description: { type: "string" },
+            callToAction: {
+              type: "string",
+              enum: ["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "SUBSCRIBE", "CONTACT_US", "DOWNLOAD", "GET_QUOTE", "BOOK_TRAVEL", "APPLY_NOW", "GET_OFFER"],
+            },
+          },
+          required: ["layerKey", "campaignName", "headline", "primaryText", "description", "callToAction"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["productName", "finalUrl", "totalDailyBudget", "metaTargeting", "layers"],
     additionalProperties: false,
   },
 } as const;

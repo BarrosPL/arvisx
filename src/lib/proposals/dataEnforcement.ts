@@ -1,5 +1,6 @@
 export type ProposalTypeInput =
   | "NEW_CAMPAIGN"
+  | "NEW_FUNNEL"
   | "PAUSE_AD"
   | "ACTIVATE_AD"
   | "ADJUST_BUDGET"
@@ -29,6 +30,11 @@ const FINANCIAL_METRIC_FIELDS = ["spend", "ctr", "cpc", "cpl", "cpa", "conversio
  * nunca mais dava match - o uploader parou de aparecer pra qualquer proposta). Import
  * direto elimina essa classe de bug de vez. */
 export const MISSING_CREATIVE_ASSET_LABEL = "imagem ou vídeo do anúncio";
+
+/** NEW_FUNNEL usa o plural de proposito (5 criativos, um por camada) - texto distinto
+ * de MISSING_CREATIVE_ASSET_LABEL pra nunca ser confundido com o caso de proposta
+ * unica, mesmo formato/motivo de existir como constante exportada. */
+export const MISSING_FUNNEL_CREATIVE_ASSETS_LABEL = "criativos das 5 camadas do funil";
 
 /** Tipos que agem sobre uma campanha/anuncio que ja existe na plataforma. */
 const EXISTING_CAMPAIGN_ACTIONS = new Set<ProposalTypeInput>([
@@ -69,6 +75,14 @@ export function evaluateProposalReadiness(input: ProposalReadinessInput): Propos
     return input.platform === "GOOGLE"
       ? { ready: true, missing: [] }
       : { ready: false, missing: [MISSING_CREATIVE_ASSET_LABEL] };
+  }
+
+  // NEW_FUNNEL so existe pra Meta (a esteira depende de Custom Audiences, que so foi
+  // implementado pra Meta nesta versao) - sempre nasce NEEDS_MORE_DATA, igual
+  // NEW_CAMPAIGN Meta: os 5 criativos sao anexados depois, um por camada, na revisao
+  // da proposta (rota /api/proposals/[id]/funnel-layer-asset).
+  if (input.type === "NEW_FUNNEL") {
+    return { ready: false, missing: [MISSING_FUNNEL_CREATIVE_ASSETS_LABEL] };
   }
 
   if (!EXISTING_CAMPAIGN_ACTIONS.has(input.type)) {

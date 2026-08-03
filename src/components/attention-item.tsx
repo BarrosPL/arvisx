@@ -35,6 +35,7 @@ export function AttentionItem({
   prefill,
   proposalId,
   needsCreativeAsset,
+  needsFunnelAssets,
   onClick,
 }: {
   tone: StatusTone;
@@ -45,6 +46,8 @@ export function AttentionItem({
   /** NEW_CAMPAIGN (Meta) parada so por falta do criativo - mostra o uploader inline
    * assim que o chat abrir, sem depender de tool call (ver AttentionEntry). */
   needsCreativeAsset?: boolean;
+  /** Mesma ideia, pra NEW_FUNNEL (5 camadas) - abre o uploader das 5 camadas. */
+  needsFunnelAssets?: boolean;
   /** Chamado junto do clique, antes de abrir o chat - ex: fechar um popover que contém este item. */
   onClick?: () => void;
 }) {
@@ -103,7 +106,7 @@ export function AttentionItem({
         type="button"
         onClick={() => {
           onClick?.();
-          openChat({ prefill, contextProposalId: proposalId, needsCreativeAsset });
+          openChat({ prefill, contextProposalId: proposalId, needsCreativeAsset, needsFunnelAssets });
         }}
         className="flex min-w-0 flex-1 items-start gap-3 rounded-lg border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:border-foreground/20"
       >

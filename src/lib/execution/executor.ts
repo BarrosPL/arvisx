@@ -1,8 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { ExecutionStatus, type ExecutionAction, type Proposal } from "@/generated/prisma/client";
+import {
+  ExecutionStatus,
+  type ExecutionAction,
+  type Proposal,
+  type ProposalFunnelLayer,
+  type FunnelLayerKey,
+} from "@/generated/prisma/client";
 import { assertProposalTransition, type ProposalStatus } from "@/lib/proposals/lifecycle";
 import { toPlatformCredential } from "@/lib/ads/credentials";
-import type { CampaignPlan } from "@/lib/agent/schema";
+import type { CampaignPlan, FunnelPlan } from "@/lib/agent/schema";
+import type { MetaAdSetTargeting } from "@/lib/ads/metaWrite";
 import {
   setMetaAdStatus,
   setMetaAdSetStatus,
@@ -20,6 +27,7 @@ import {
   createMetaVideoAdCreative,
   createMetaAd,
 } from "@/lib/ads/metaWrite";
+import { createMetaEngagementAudience, createMetaLookalikeAudience, PAGE_ENGAGEMENT_EVENTS } from "@/lib/ads/metaAudiences";
 import { storePublicImage } from "@/lib/media/publicAssets";
 import {
   setGoogleAdStatus,
@@ -72,6 +80,141 @@ async function findCredential(credentialId: string, platform: "META" | "GOOGLE")
     throw new Error(`A conta de anuncio desta proposta nao e ${platform}`);
   }
   return toPlatformCredential(record);
+}
+
+type MetaCredential = Awaited<ReturnType<typeof findCredential>>;
+
+interface FunnelLayerResult {
+  ok: boolean;
+  campaignId?: string;
+  adSetId?: string;
+  adId?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Cria UMA camada da esteira (campanha + adset + criativo + anuncio) - mesma cadeia
+ * que o bloco NEW_CAMPAIGN/META usa, parametrizada por camada em vez de repetida 5
+ * vezes. Reaproveita o mesmo branch imagem-OU-video (video_data nao tem campo de texto
+ * principal, confirmado na doc oficial - ver NEW_CAMPAIGN acima pro motivo).
+ */
+async function createMetaFunnelLayerAd(
+  credential: MetaCredential,
+  params: {
+    pageId: string;
+    campaignName: string;
+    dailyBudgetMinorUnits: number;
+    headline: string;
+    primaryText: string;
+    description: string;
+    callToAction: string;
+    finalUrl: string;
+    targeting: MetaAdSetTargeting;
+    layer: ProposalFunnelLayer;
+  }
+): Promise<FunnelLayerResult> {
+  const hasImage = !!params.layer.creativeAssetData;
+  const hasVideo = !!params.layer.creativeVideoData && !!params.layer.creativeCoverImageData;
+  if (!hasImage && !hasVideo) {
+    return { ok: false, errorMessage: "Camada sem imagem ou vídeo anexado" };
+  }
+
+  let creativeSource: { kind: "image"; imageHash: string } | { kind: "video"; videoId: string; thumbnailUrl: string };
+
+  if (hasVideo) {
+    const videoBase64 = Buffer.from(params.layer.creativeVideoData!).toString("base64");
+    const videoUploadResult = await uploadMetaAdVideo(credential, {
+      base64Data: videoBase64,
+      mimeType: params.layer.creativeVideoMimeType ?? "video/mp4",
+      title: params.campaignName,
+    });
+    if (!videoUploadResult.ok || !videoUploadResult.videoId) {
+      return { ok: false, errorMessage: videoUploadResult.errorMessage ?? "Falha ao subir o vídeo do anúncio" };
+    }
+    const { publicUrl: thumbnailUrl } = await storePublicImage(
+      Buffer.from(params.layer.creativeCoverImageData!),
+      params.layer.creativeCoverImageMimeType ?? "image/jpeg"
+    );
+    creativeSource = { kind: "video", videoId: videoUploadResult.videoId, thumbnailUrl };
+  } else {
+    const imageBase64 = Buffer.from(params.layer.creativeAssetData!).toString("base64");
+    const uploadResult = await uploadMetaAdImage(credential, imageBase64);
+    if (!uploadResult.ok || !uploadResult.imageHash) {
+      return { ok: false, errorMessage: uploadResult.errorMessage ?? "Falha ao subir a imagem do anúncio" };
+    }
+    creativeSource = { kind: "image", imageHash: uploadResult.imageHash };
+  }
+
+  // Cada camada nasce pausada, mesma regra fixa do NEW_CAMPAIGN - confere no
+  // Gerenciador antes de ativar manualmente por la.
+  const campaignResult = await createMetaCampaign(credential, {
+    name: params.campaignName,
+    dailyBudgetMinorUnits: params.dailyBudgetMinorUnits,
+    status: "PAUSED",
+  });
+  if (!campaignResult.ok || !campaignResult.campaignId) {
+    return { ok: false, errorMessage: campaignResult.errorMessage ?? "Falha ao criar a campanha" };
+  }
+
+  const adSetResult = await createMetaAdSet(credential, {
+    campaignId: campaignResult.campaignId,
+    name: `${params.campaignName} — AdSet`,
+    targeting: params.targeting,
+    status: "PAUSED",
+  });
+  if (!adSetResult.ok || !adSetResult.adSetId) {
+    return {
+      ok: false,
+      campaignId: campaignResult.campaignId,
+      errorMessage: adSetResult.errorMessage ?? "Falha ao criar o AdSet",
+    };
+  }
+
+  const creativeResult =
+    creativeSource.kind === "video"
+      ? await createMetaVideoAdCreative(credential, {
+          pageId: params.pageId,
+          videoId: creativeSource.videoId,
+          thumbnailImageUrl: creativeSource.thumbnailUrl,
+          linkDescription: params.description,
+          callToAction: params.callToAction,
+          linkUrl: params.finalUrl,
+          name: params.headline,
+        })
+      : await createMetaAdCreative(credential, {
+          pageId: params.pageId,
+          imageHash: creativeSource.imageHash,
+          headline: params.headline,
+          primaryText: params.primaryText,
+          description: params.description,
+          callToAction: params.callToAction,
+          linkUrl: params.finalUrl,
+        });
+  if (!creativeResult.ok || !creativeResult.creativeId) {
+    return {
+      ok: false,
+      campaignId: campaignResult.campaignId,
+      adSetId: adSetResult.adSetId,
+      errorMessage: creativeResult.errorMessage ?? "Falha ao criar o criativo",
+    };
+  }
+
+  const adResult = await createMetaAd(credential, {
+    adSetId: adSetResult.adSetId,
+    creativeId: creativeResult.creativeId,
+    name: params.campaignName,
+    status: "PAUSED",
+  });
+  if (!adResult.ok || !adResult.adId) {
+    return {
+      ok: false,
+      campaignId: campaignResult.campaignId,
+      adSetId: adSetResult.adSetId,
+      errorMessage: adResult.errorMessage ?? "Falha ao criar o anúncio",
+    };
+  }
+
+  return { ok: true, campaignId: campaignResult.campaignId, adSetId: adSetResult.adSetId, adId: adResult.adId };
 }
 
 /** Despacha a chamada real de escrita conforme o tipo da proposta. Nunca chamado sem status aprovado (ver executeProposal). */
@@ -543,6 +686,317 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
         platform: "GOOGLE",
         campaignId: campaignResult.campaignId,
         note: "Pausar a campanha manualmente no Google Ads pra reverter.",
+      },
+    };
+  }
+
+  if (proposal.type === "NEW_FUNNEL") {
+    if (proposal.platform !== "META") {
+      throw new Error("NEW_FUNNEL só é suportado no Meta nesta versão");
+    }
+    const payload = proposal.payloadJson as { funnelPlan?: FunnelPlan } | null;
+    const plan = payload?.funnelPlan;
+    if (!plan) {
+      throw new Error("Proposta sem funnelPlan em payloadJson");
+    }
+
+    const layerRows = await prisma.proposalFunnelLayer.findMany({ where: { proposalId: proposal.id } });
+    const layerByKey = new Map(layerRows.map((l) => [l.layerKey, l]));
+    const frio = layerByKey.get("FRIO");
+    const morno = layerByKey.get("MORNO");
+    const quente = layerByKey.get("QUENTE");
+    const remarketing = layerByKey.get("REMARKETING");
+    const lookalike = layerByKey.get("LOOKALIKE");
+    if (!frio || !morno || !quente || !remarketing || !lookalike) {
+      throw new Error("Proposta de funil sem as 5 camadas gravadas - dado inconsistente");
+    }
+
+    const pageResult = await resolveMetaPageId(credential);
+    if (!pageResult.ok || !pageResult.pageId) {
+      return {
+        ok: false,
+        requestJson: { productName: plan.productName },
+        errorMessage: pageResult.errorMessage ?? "Falha ao resolver a Página do Facebook da conta",
+      };
+    }
+    const pageId = pageResult.pageId;
+
+    const interestIds: string[] = [];
+    for (const interest of plan.metaTargeting.interests) {
+      const matches = await searchMetaInterests(credential, interest);
+      if (matches.length === 0) {
+        return {
+          ok: false,
+          requestJson: { productName: plan.productName },
+          errorMessage: `Não foi possível resolver o interesse "${interest}" no Meta`,
+        };
+      }
+      interestIds.push(matches[0].id);
+    }
+
+    // Publicos de ENGAJAMENTO COM A PAGINA - proxy disponivel hoje, nao o mecanismo
+    // ideal da spec. Duas limitacoes reais, documentadas aqui pra quem for revisar os
+    // numeros depois nao achar que e precisao que nao existe:
+    // 1. Nao ha audience por VIDEO especifico (o formato do `rule` pra isso nao foi
+    //    confirmado na doc oficial - ver nota no topo de metaAudiences.ts) - entao
+    //    Morno/Quente nao distinguem QUAL video/gancho a pessoa viu, so que ela
+    //    interagiu com a Pagina de algum jeito.
+    // 2. Sem Pixel/Conversions API em lugar nenhum do sistema, nao ha como saber quem
+    //    CONVERTEU - Remarketing (retina quem viu e nao converteu) e Lookalike
+    //    (semeado por quem comprou) viram aproximacoes por engajamento, nao pelo sinal
+    //    de verdade que a spec pede.
+    const mornoAudienceResult = await createMetaEngagementAudience(credential, {
+      name: `${plan.productName} - Morno (engajou com a Página)`,
+      inclusionRules: [
+        {
+          eventSourceType: "page",
+          eventSourceIds: [pageId],
+          retentionDays: 60,
+          filters: [{ field: "event", operator: "eq", value: PAGE_ENGAGEMENT_EVENTS.ENGAGED }],
+        },
+      ],
+    });
+    if (!mornoAudienceResult.ok || !mornoAudienceResult.audienceId) {
+      return {
+        ok: false,
+        requestJson: { productName: plan.productName },
+        errorMessage: mornoAudienceResult.errorMessage ?? "Falha ao criar o público de Morno",
+      };
+    }
+
+    // CTA_CLICKED (clicou num botao de call-to-action) e um sinal de intencao mais
+    // forte que engajamento generico - a aproximacao mais proxima de "quente"
+    // disponivel sem audience por video.
+    const quenteAudienceResult = await createMetaEngagementAudience(credential, {
+      name: `${plan.productName} - Quente (clicou CTA da Página)`,
+      inclusionRules: [
+        {
+          eventSourceType: "page",
+          eventSourceIds: [pageId],
+          retentionDays: 30,
+          filters: [{ field: "event", operator: "eq", value: PAGE_ENGAGEMENT_EVENTS.CTA_CLICKED }],
+        },
+      ],
+    });
+    if (!quenteAudienceResult.ok || !quenteAudienceResult.audienceId) {
+      return {
+        ok: false,
+        requestJson: { productName: plan.productName },
+        errorMessage: quenteAudienceResult.errorMessage ?? "Falha ao criar o público de Quente",
+      };
+    }
+
+    // Mesma fonte do Morno, janela mais longa (120d) - aproxima as sub-janelas de
+    // 20/60/120 dias da spec com uma unica camada mais duradoura, ate uma versao
+    // futura separar isso em 3 campanhas de remarketing de verdade.
+    const remarketingAudienceResult = await createMetaEngagementAudience(credential, {
+      name: `${plan.productName} - Remarketing (engajou, janela longa)`,
+      inclusionRules: [
+        {
+          eventSourceType: "page",
+          eventSourceIds: [pageId],
+          retentionDays: 120,
+          filters: [{ field: "event", operator: "eq", value: PAGE_ENGAGEMENT_EVENTS.ENGAGED }],
+        },
+      ],
+    });
+    if (!remarketingAudienceResult.ok || !remarketingAudienceResult.audienceId) {
+      return {
+        ok: false,
+        requestJson: { productName: plan.productName },
+        errorMessage: remarketingAudienceResult.errorMessage ?? "Falha ao criar o público de Remarketing",
+      };
+    }
+
+    // Lookalike PODE falhar de verdade numa conta nova - a Meta exige >= 100 pessoas na
+    // semente, e um publico de engajamento recem-criado comeca vazio (so enche com o
+    // tempo, depois que Frio/Morno rodarem de verdade). Isso NAO derruba o funil
+    // inteiro: as outras 4 camadas continuam sendo criadas, so o 1% fica de fora, com o
+    // motivo explicado no resultado final.
+    const lookalikeAudienceResult = await createMetaLookalikeAudience(credential, {
+      name: `${plan.productName} - 1% (lookalike de Morno)`,
+      originAudienceId: mornoAudienceResult.audienceId,
+      country: plan.metaTargeting.countries[0],
+      ratio: 0.01,
+    });
+
+    const layerResults = new Map<FunnelLayerKey, FunnelLayerResult>();
+
+    layerResults.set(
+      "FRIO",
+      await createMetaFunnelLayerAd(credential, {
+        pageId,
+        campaignName: frio.campaignName,
+        dailyBudgetMinorUnits: frio.dailyBudgetMinorUnits,
+        headline: frio.headline,
+        primaryText: frio.primaryText,
+        description: frio.description,
+        callToAction: frio.callToAction,
+        finalUrl: plan.finalUrl,
+        layer: frio,
+        targeting: {
+          countries: plan.metaTargeting.countries,
+          ageMin: plan.metaTargeting.ageMin,
+          ageMax: plan.metaTargeting.ageMax,
+          interestIds,
+          // Quem ja engajou (Morno) ou ja demonstrou intencao forte (Quente) nao
+          // precisa continuar vendo o anuncio de topo de funil - o mecanismo real de
+          // "ja viu, nao mostra de novo" da secao 5 da spec.
+          excludedCustomAudienceIds: [mornoAudienceResult.audienceId, quenteAudienceResult.audienceId],
+        },
+      })
+    );
+
+    layerResults.set(
+      "MORNO",
+      await createMetaFunnelLayerAd(credential, {
+        pageId,
+        campaignName: morno.campaignName,
+        dailyBudgetMinorUnits: morno.dailyBudgetMinorUnits,
+        headline: morno.headline,
+        primaryText: morno.primaryText,
+        description: morno.description,
+        callToAction: morno.callToAction,
+        finalUrl: plan.finalUrl,
+        layer: morno,
+        targeting: {
+          countries: plan.metaTargeting.countries,
+          ageMin: plan.metaTargeting.ageMin,
+          ageMax: plan.metaTargeting.ageMax,
+          interestIds: [],
+          customAudienceIds: [mornoAudienceResult.audienceId],
+          excludedCustomAudienceIds: [quenteAudienceResult.audienceId],
+        },
+      })
+    );
+
+    layerResults.set(
+      "QUENTE",
+      await createMetaFunnelLayerAd(credential, {
+        pageId,
+        campaignName: quente.campaignName,
+        dailyBudgetMinorUnits: quente.dailyBudgetMinorUnits,
+        headline: quente.headline,
+        primaryText: quente.primaryText,
+        description: quente.description,
+        callToAction: quente.callToAction,
+        finalUrl: plan.finalUrl,
+        layer: quente,
+        targeting: {
+          countries: plan.metaTargeting.countries,
+          ageMin: plan.metaTargeting.ageMin,
+          ageMax: plan.metaTargeting.ageMax,
+          interestIds: [],
+          customAudienceIds: [quenteAudienceResult.audienceId],
+        },
+      })
+    );
+
+    layerResults.set(
+      "REMARKETING",
+      await createMetaFunnelLayerAd(credential, {
+        pageId,
+        campaignName: remarketing.campaignName,
+        dailyBudgetMinorUnits: remarketing.dailyBudgetMinorUnits,
+        headline: remarketing.headline,
+        primaryText: remarketing.primaryText,
+        description: remarketing.description,
+        callToAction: remarketing.callToAction,
+        finalUrl: plan.finalUrl,
+        layer: remarketing,
+        targeting: {
+          countries: plan.metaTargeting.countries,
+          ageMin: plan.metaTargeting.ageMin,
+          ageMax: plan.metaTargeting.ageMax,
+          interestIds: [],
+          customAudienceIds: [remarketingAudienceResult.audienceId],
+        },
+      })
+    );
+
+    if (lookalikeAudienceResult.ok && lookalikeAudienceResult.audienceId) {
+      layerResults.set(
+        "LOOKALIKE",
+        await createMetaFunnelLayerAd(credential, {
+          pageId,
+          campaignName: lookalike.campaignName,
+          dailyBudgetMinorUnits: lookalike.dailyBudgetMinorUnits,
+          headline: lookalike.headline,
+          primaryText: lookalike.primaryText,
+          description: lookalike.description,
+          callToAction: lookalike.callToAction,
+          finalUrl: plan.finalUrl,
+          layer: lookalike,
+          targeting: {
+            countries: plan.metaTargeting.countries,
+            ageMin: plan.metaTargeting.ageMin,
+            ageMax: plan.metaTargeting.ageMax,
+            interestIds: [],
+            customAudienceIds: [lookalikeAudienceResult.audienceId],
+          },
+        })
+      );
+    } else {
+      layerResults.set("LOOKALIKE", {
+        ok: false,
+        errorMessage:
+          lookalikeAudienceResult.errorMessage ??
+          "Público semente pequeno demais pra criar o 1% agora - normal em conta nova, tente de novo depois que Morno tiver mais gente.",
+      });
+    }
+
+    const audienceIdByLayer: Partial<Record<FunnelLayerKey, string | null>> = {
+      MORNO: mornoAudienceResult.audienceId,
+      QUENTE: quenteAudienceResult.audienceId,
+      REMARKETING: remarketingAudienceResult.audienceId,
+      LOOKALIKE: lookalikeAudienceResult.audienceId ?? null,
+    };
+
+    // Persiste o resultado de CADA camada na propria linha - e o que um
+    // ADJUST_BUDGET/PAUSE_AD por camada, ou uma tela de acompanhamento futura, vai
+    // ler, sem precisar reprocessar payloadJson.
+    for (const [layerKey, result] of layerResults) {
+      const row = layerByKey.get(layerKey)!;
+      await prisma.proposalFunnelLayer.update({
+        where: { id: row.id },
+        data: {
+          platformCampaignId: result.campaignId ?? null,
+          platformAdSetId: result.adSetId ?? null,
+          platformAdId: result.adId ?? null,
+          customAudienceId: audienceIdByLayer[layerKey] ?? null,
+        },
+      });
+    }
+
+    const frioResult = layerResults.get("FRIO")!;
+    const succeeded = [...layerResults.entries()].filter(([, r]) => r.ok).map(([k]) => k);
+    const failed = [...layerResults.entries()].filter(([, r]) => !r.ok);
+
+    return {
+      // FRIO e a camada obrigatoria - sem ela nao ha funil nenhum, so audiencias
+      // criadas a toa. As outras 4 sao best-effort: Lookalike falhar numa conta nova e
+      // ESPERADO (comentado acima); Morno/Quente/Remarketing falhar e menos comum mas
+      // nao impede o Frio (independente de audiencia) de ter rodado.
+      ok: frioResult.ok,
+      requestJson: { productName: plan.productName, totalDailyBudget: plan.totalDailyBudget },
+      responseJson: {
+        layers: Object.fromEntries(layerResults),
+        audiences: {
+          morno: mornoAudienceResult.audienceId,
+          quente: quenteAudienceResult.audienceId,
+          remarketing: remarketingAudienceResult.audienceId,
+          lookalike: lookalikeAudienceResult.audienceId ?? null,
+        },
+      },
+      errorMessage: frioResult.ok
+        ? failed.length > 0
+          ? `Funil criado parcialmente (${succeeded.length}/5 camadas) - falhou: ${failed.map(([k]) => k).join(", ")}`
+          : undefined
+        : (frioResult.errorMessage ?? "Falha ao criar a camada Frio"),
+      rollbackInfoJson: {
+        platform: "META",
+        campaignIds: succeeded.map((k) => layerResults.get(k)?.campaignId).filter(Boolean),
+        note: "Pausar cada campanha manualmente no Gerenciador de Anúncios pra reverter.",
       },
     };
   }
