@@ -49,17 +49,18 @@ function hasFinancialMetric(metrics: Record<string, unknown> | null): boolean {
  * contrario fica marcada como faltando dado, em vez de pedir aprovacao no escuro.
  *
  * NEW_CAMPAIGN no Meta sempre nasce NEEDS_MORE_DATA: o criativo/segmentacao ja vem
- * completo no payload (campaignPlan, validado pelo zod antes desta funcao rodar), mas a
- * imagem do anuncio ainda nao existe nesse momento - so um humano anexa ela depois, na
- * revisao da proposta (rota /api/proposals/[id]/creative-asset), o que transiciona pra
- * PENDING. NEW_CAMPAIGN no Google (Responsive Search Ad - so texto, sem imagem) ja pode
- * nascer PENDING direto, o campaignPlan.googleAd ja cobre o que falta.
+ * completo no payload (campaignPlan, validado pelo zod antes desta funcao rodar), mas o
+ * criativo em si (imagem OU video+capa) ainda nao existe nesse momento - so um humano
+ * anexa depois, na revisao da proposta (rota /api/proposals/[id]/creative-asset pra
+ * imagem, /creative-video-asset pra video), o que transiciona pra PENDING. NEW_CAMPAIGN
+ * no Google (Responsive Search Ad - so texto, sem imagem) ja pode nascer PENDING direto,
+ * o campaignPlan.googleAd ja cobre o que falta.
  */
 export function evaluateProposalReadiness(input: ProposalReadinessInput): ProposalReadinessResult {
   if (input.type === "NEW_CAMPAIGN") {
     return input.platform === "GOOGLE"
       ? { ready: true, missing: [] }
-      : { ready: false, missing: ["imagem do anúncio"] };
+      : { ready: false, missing: ["imagem ou vídeo do anúncio"] };
   }
 
   if (!EXISTING_CAMPAIGN_ACTIONS.has(input.type)) {

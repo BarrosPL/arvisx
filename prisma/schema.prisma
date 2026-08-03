@@ -424,8 +424,20 @@ model Proposal {
   payloadJson           Json // proposta estruturada completa (budget, creative brief, etc.)
   // So para NEW_CAMPAIGN: imagem do anuncio anexada por um humano na revisao (a JAMILE
   // nunca gera/promete imagem - so texto/segmentacao/orcamento via payloadJson.campaignPlan).
+  // Caminho de IMAGEM - mutuamente exclusivo com os 4 campos de video abaixo (uma
+  // proposta usa um ou outro, nunca os dois - ver rota creative-video-asset).
   creativeAssetData     Bytes?
   creativeAssetMimeType String?
+  // Caminho de VIDEO - dois blobs, porque um anuncio em video precisa de DOIS arquivos:
+  // o video em si (creativeVideoData) e uma imagem de capa/thumbnail (creativeCoverImageData)
+  // que o executor hospeda publicamente (lib/media/publicAssets.ts) antes de criar o
+  // criativo - a Meta exige uma URL publica ali, nao aceita hash de imagem como o
+  // caminho de imagem usa. Ver executor.ts (branch NEW_CAMPAIGN/META) e a rota
+  // /api/proposals/[id]/creative-video-asset.
+  creativeVideoData          Bytes?
+  creativeVideoMimeType      String?
+  creativeCoverImageData     Bytes?
+  creativeCoverImageMimeType String?
   decidedByUserId       String?
   decidedAt             DateTime?
   decisionNote          String?

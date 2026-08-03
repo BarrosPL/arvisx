@@ -11,7 +11,7 @@ describe("evaluateProposalReadiness", () => {
       metricsJson: null,
     });
     expect(result.ready).toBe(false);
-    expect(result.missing).toEqual(["imagem do anúncio"]);
+    expect(result.missing).toEqual(["imagem ou vídeo do anúncio"]);
     expect(deriveInitialStatus(result)).toBe("NEEDS_MORE_DATA");
   });
 

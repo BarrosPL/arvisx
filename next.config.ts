@@ -32,6 +32,21 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  experimental: {
+    /**
+     * Default do Next e 10MB - e SILENCIOSO ao estourar: o proxy.ts (middleware de
+     * auth, que roda em toda rota /api) buferiza o corpo inteiro em memoria pra poder
+     * ler duas vezes, e se passar do limite so CORTA os bytes excedentes sem erro
+     * nenhum pro cliente. Sem levantar isto, um upload de video acima de 10MB nao
+     * falharia com mensagem clara - o JSON chegaria truncado na rota e o vídeo
+     * salvo ficaria corrompido em silencio.
+     *
+     * 100mb cobre um video de anuncio real (a base64 do corpo ainda inflaria ~33% em
+     * cima do arquivo cru, mais a imagem de capa) sem abrir a porta pra qualquer coisa -
+     * nao e um limite "sem teto", so grande o bastante pro caso de uso real.
+     */
+    proxyClientMaxBodySize: "100mb",
+  },
 };
 
 export default nextConfig;

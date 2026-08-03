@@ -11,13 +11,16 @@ import {
   getMetaBudget,
   duplicateMetaAdWithBudget,
   uploadMetaAdImage,
+  uploadMetaAdVideo,
   resolveMetaPageId,
   searchMetaInterests,
   createMetaCampaign,
   createMetaAdSet,
   createMetaAdCreative,
+  createMetaVideoAdCreative,
   createMetaAd,
 } from "@/lib/ads/metaWrite";
+import { storePublicImage } from "@/lib/media/publicAssets";
 import {
   setGoogleAdStatus,
   setGoogleAdGroupStatus,
@@ -278,18 +281,52 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
       if (!plan.metaTargeting) {
         throw new Error("campaignPlan sem metaTargeting (Meta)");
       }
-      if (!proposal.creativeAssetData) {
-        throw new Error("Proposta sem imagem do anúncio anexada");
+      const hasImage = !!proposal.creativeAssetData;
+      const hasVideo = !!proposal.creativeVideoData && !!proposal.creativeCoverImageData;
+      if (!hasImage && !hasVideo) {
+        throw new Error("Proposta sem imagem ou vídeo do anúncio anexado");
       }
 
-      const imageBase64 = Buffer.from(proposal.creativeAssetData).toString("base64");
-      const uploadResult = await uploadMetaAdImage(credential, imageBase64);
-      if (!uploadResult.ok || !uploadResult.imageHash) {
-        return {
-          ok: false,
-          requestJson: { campaignName: plan.campaignName },
-          errorMessage: uploadResult.errorMessage ?? "Falha ao subir a imagem do anúncio",
-        };
+      // Duas fontes possiveis de criativo (imagem OU video+capa - nunca as duas na
+      // mesma proposta, ver comentario no schema.prisma). Resolvidas aqui, ANTES de
+      // criar campanha/adset na Meta - falha rapido e barato em vez de deixar recurso
+      // real pela metade se o upload do criativo falhar.
+      let creativeSource:
+        | { kind: "image"; imageHash: string }
+        | { kind: "video"; videoId: string; thumbnailUrl: string };
+
+      if (hasVideo) {
+        const videoBase64 = Buffer.from(proposal.creativeVideoData!).toString("base64");
+        const videoUploadResult = await uploadMetaAdVideo(credential, {
+          base64Data: videoBase64,
+          mimeType: proposal.creativeVideoMimeType ?? "video/mp4",
+          title: plan.campaignName,
+        });
+        if (!videoUploadResult.ok || !videoUploadResult.videoId) {
+          return {
+            ok: false,
+            requestJson: { campaignName: plan.campaignName },
+            errorMessage: videoUploadResult.errorMessage ?? "Falha ao subir o vídeo do anúncio",
+          };
+        }
+
+        const { publicUrl: thumbnailUrl } = await storePublicImage(
+          Buffer.from(proposal.creativeCoverImageData!),
+          proposal.creativeCoverImageMimeType ?? "image/jpeg"
+        );
+
+        creativeSource = { kind: "video", videoId: videoUploadResult.videoId, thumbnailUrl };
+      } else {
+        const imageBase64 = Buffer.from(proposal.creativeAssetData!).toString("base64");
+        const uploadResult = await uploadMetaAdImage(credential, imageBase64);
+        if (!uploadResult.ok || !uploadResult.imageHash) {
+          return {
+            ok: false,
+            requestJson: { campaignName: plan.campaignName },
+            errorMessage: uploadResult.errorMessage ?? "Falha ao subir a imagem do anúncio",
+          };
+        }
+        creativeSource = { kind: "image", imageHash: uploadResult.imageHash };
       }
 
       const pageResult = await resolveMetaPageId(credential);
@@ -350,15 +387,29 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
         };
       }
 
-      const creativeResult = await createMetaAdCreative(credential, {
-        pageId: pageResult.pageId,
-        imageHash: uploadResult.imageHash,
-        headline: plan.headline,
-        primaryText: plan.primaryText,
-        description: plan.description,
-        callToAction: plan.callToAction,
-        linkUrl: plan.finalUrl,
-      });
+      // video_data (ver createMetaVideoAdCreative) nao tem campo pra texto principal -
+      // so link_data (caminho de imagem) tem "message"/primaryText. Confirmado na doc
+      // oficial, nao e omissao: nao ha onde colocar plan.primaryText no anuncio em video.
+      const creativeResult =
+        creativeSource.kind === "video"
+          ? await createMetaVideoAdCreative(credential, {
+              pageId: pageResult.pageId,
+              videoId: creativeSource.videoId,
+              thumbnailImageUrl: creativeSource.thumbnailUrl,
+              linkDescription: plan.description,
+              callToAction: plan.callToAction,
+              linkUrl: plan.finalUrl,
+              name: plan.headline,
+            })
+          : await createMetaAdCreative(credential, {
+              pageId: pageResult.pageId,
+              imageHash: creativeSource.imageHash,
+              headline: plan.headline,
+              primaryText: plan.primaryText,
+              description: plan.description,
+              callToAction: plan.callToAction,
+              linkUrl: plan.finalUrl,
+            });
       if (!creativeResult.ok || !creativeResult.creativeId) {
         return {
           ok: false,
