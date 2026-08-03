@@ -80,12 +80,3 @@ export async function requireAccountAccess(credentialId: string) {
   return { user, credential };
 }
 
-/** Ids de todas as contas de anuncio do usuario - usado onde a consulta e "tudo que e
- * meu" (dashboard, notificacoes, roster do chat) em vez de uma conta especifica. */
-export async function listAccountIdsForUser(userId: string): Promise<string[]> {
-  const credentials = await prisma.adCredential.findMany({
-    where: { providerConnection: { userId } },
-    select: { id: true },
-  });
-  return credentials.map((credential) => credential.id);
-}

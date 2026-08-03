@@ -1,6 +1,9 @@
 import type { StatusTone } from "@/components/status-badge";
 
-export const PROPOSAL_STATUS_LABEL: Record<string, string> = {
+// Tudo aqui e interno de proposito: proposalStatusTone e a UNICA porta de saida deste
+// arquivo. Expor os mapas soltos foi o que deixou um terceiro (PROPOSAL_STATUS_VARIANT,
+// do tempo do Badge antigo do shadcn) sobreviver sem nenhum uso.
+const PROPOSAL_STATUS_LABEL: Record<string, string> = {
   NEEDS_MORE_DATA: "Precisa de mais dados",
   PENDING: "Pendente",
   APPROVED: "Aprovada",
@@ -11,18 +14,7 @@ export const PROPOSAL_STATUS_LABEL: Record<string, string> = {
   EXECUTION_FAILED: "Falha na execução",
 };
 
-export const PROPOSAL_STATUS_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  NEEDS_MORE_DATA: "secondary",
-  PENDING: "secondary",
-  APPROVED: "default",
-  REJECTED: "destructive",
-  TEST: "outline",
-  ADJUST: "outline",
-  EXECUTED: "default",
-  EXECUTION_FAILED: "destructive",
-};
-
-export const PROPOSAL_STATUS_TONE: Record<string, StatusTone> = {
+const PROPOSAL_STATUS_TONE: Record<string, StatusTone> = {
   NEEDS_MORE_DATA: "warning",
   PENDING: "info",
   APPROVED: "success",
@@ -33,6 +25,7 @@ export const PROPOSAL_STATUS_TONE: Record<string, StatusTone> = {
   EXECUTION_FAILED: "danger",
 };
 
+/** Status cru do banco -> cor + rotulo em portugues para o StatusBadge. */
 export function proposalStatusTone(status: string): { tone: StatusTone; label: string } {
   return { tone: PROPOSAL_STATUS_TONE[status] ?? "neutral", label: PROPOSAL_STATUS_LABEL[status] ?? status };
 }

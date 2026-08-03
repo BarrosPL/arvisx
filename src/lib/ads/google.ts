@@ -172,12 +172,3 @@ export async function fetchGoogleAdsInsights(credential: PlatformCredential): Pr
   }
 }
 
-export async function probeGoogleAdsCredential(
-  credential: PlatformCredential
-): Promise<{ ok: boolean; message?: string }> {
-  const result = await fetchGoogleAdsInsights(credential);
-  if (result.state === CollectionState.AUTH_ERROR || result.state === CollectionState.API_ERROR) {
-    return { ok: false, message: result.errorMessage };
-  }
-  return { ok: true };
-}

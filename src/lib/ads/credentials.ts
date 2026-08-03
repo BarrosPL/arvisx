@@ -17,11 +17,6 @@ export function toPlatformCredential(
   };
 }
 
-/** Remove os blobs criptografados antes de devolver a atribuicao para o cliente HTTP. */
-export function redactCredential(record: AdCredential) {
-  return record;
-}
-
 /** Remove os blobs criptografados antes de devolver a conexao para o cliente HTTP. */
 export function redactConnection(record: ProviderConnection) {
   const { encryptedAccessToken: _accessToken, encryptedRefreshToken: _refreshToken, ...safe } = record;

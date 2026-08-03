@@ -15,7 +15,7 @@ import { fetchGoogleCampaignInsights } from "./googleCampaigns";
  * Acumula historico (nunca apaga), igual AdMetricSnapshot - quem le pega so a coleta
  * mais recente por (credentialId, platformCampaignId).
  */
-export async function collectCampaignsForAccount(
+async function collectCampaignsForAccount(
   credentialId: string,
   platform: Platform,
   fetcher: (credential: PlatformCredential) => Promise<CampaignCollectionResult>

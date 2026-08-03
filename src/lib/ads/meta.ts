@@ -95,7 +95,7 @@ interface MetaAdStatusResponse {
  * falhar, a coleta de metricas (que ja rodou) continua valendo, so o status fica
  * null nessas linhas.
  */
-export async function fetchMetaAdStatuses(credential: PlatformCredential): Promise<Map<string, string>> {
+async function fetchMetaAdStatuses(credential: PlatformCredential): Promise<Map<string, string>> {
   const accountId = credential.externalAccountId.startsWith("act_")
     ? credential.externalAccountId
     : `act_${credential.externalAccountId}`;
@@ -194,23 +194,3 @@ export async function fetchMetaInsights(
   }
 }
 
-export async function probeMetaCredential(credential: PlatformCredential): Promise<{ ok: boolean; message?: string }> {
-  const accountId = credential.externalAccountId.startsWith("act_")
-    ? credential.externalAccountId
-    : `act_${credential.externalAccountId}`;
-  const url =
-    `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}` +
-    `?fields=id,name&access_token=${encodeURIComponent(credential.accessToken)}`;
-
-  try {
-    const response = await fetch(url);
-    const body = (await response.json()) as MetaApiResponse & { id?: string };
-    if (!response.ok || body.error) {
-      throw new Error(`Meta API error: ${body.error?.message ?? response.statusText}`);
-    }
-    return { ok: true };
-  } catch (error) {
-    const { message } = classifyCollectionError(error);
-    return { ok: false, message };
-  }
-}

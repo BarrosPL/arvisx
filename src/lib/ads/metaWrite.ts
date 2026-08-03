@@ -217,7 +217,7 @@ export interface MetaAdDetails {
 }
 
 /** Le tudo que precisa copiar pra duplicar um anuncio (usado no teste A/B - ver duplicateMetaAdWithBudget). */
-export async function getMetaAdDetails(credential: PlatformCredential, adId: string): Promise<MetaAdDetails> {
+async function getMetaAdDetails(credential: PlatformCredential, adId: string): Promise<MetaAdDetails> {
   const fields =
     "creative{id},adset{id,name,targeting,billing_event,optimization_goal,bid_strategy,campaign_id}";
   const url =

@@ -24,7 +24,7 @@ import { StatusBadge } from "@/components/status-badge";
 import type { CampaignPlan } from "@/lib/agent/schema";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 
-export const TYPE_LABEL: Record<string, string> = {
+const TYPE_LABEL: Record<string, string> = {
   NEW_CAMPAIGN: "Nova campanha",
   PAUSE_AD: "Pausar anúncio",
   ACTIVATE_AD: "Ativar anúncio",

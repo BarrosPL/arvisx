@@ -4,8 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarClock,
-  Image,
-  KeyRound,
   LayoutDashboard,
   ListChecks,
   Plug,
@@ -29,13 +27,6 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-export interface BrandNavItem {
-  id: string;
-  slug: string;
-  name: string;
-  status: string;
-}
-
 interface NavItem {
   href: string;
   label: string;
@@ -48,16 +39,6 @@ export const GLOBAL_NAV: NavItem[] = [
   { href: "/proposals", label: "Propostas", icon: ListChecks, color: "amber" },
   { href: "/connections", label: "Conexões", icon: Plug, color: "violet" },
 ];
-
-export function brandNavFor(slug: string): NavItem[] {
-  const base = `/brands/${slug}`;
-  return [
-    { href: base, label: "Visão geral", icon: LayoutDashboard, color: "blue" },
-    { href: `${base}/credentials`, label: "Contas e campanhas", icon: KeyRound, color: "violet" },
-    { href: `${base}/library`, label: "Biblioteca", icon: Image, color: "orange" },
-    { href: `${base}/proposals`, label: "Propostas", icon: ListChecks, color: "amber" },
-  ];
-}
 
 export function AppSidebar({
   userEmail,
