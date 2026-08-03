@@ -74,6 +74,113 @@ async function fetchPaged<T>(startUrl: string, accountKey: string): Promise<T[]>
  * O objetivo vindo da chamada 1 e o que decide qual acao conta como "Resultado" na
  * chamada 2, pra bater com a coluna do Gerenciador de Anuncios.
  */
+export interface HistoricalWindowSummary {
+  days: number;
+  since: string;
+  until: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** So preenchido quando filtrado a UMA campanha (objetivo unico e conhecido) - em
+   * nivel de conta inteira, campanhas com objetivos diferentes nao podem ser somadas
+   * como se fossem o mesmo tipo de resultado, entao fica null de proposito (nunca um
+   * numero que pareceria certo mas estaria misturando coisas diferentes). */
+  results: number | null;
+  resultType: string | null;
+  cpr: number | null;
+  errorMessage?: string;
+}
+
+function windowRange(days: number): { since: string; until: string } {
+  const until = new Date();
+  const since = new Date(until.getTime() - days * 24 * 60 * 60 * 1000);
+  const fmt = (date: Date) => date.toISOString().slice(0, 10);
+  return { since: fmt(since), until: fmt(until) };
+}
+
+/**
+ * Performance em MULTIPLAS janelas de lookback (30/60/90/120/360/720 dias tipicamente -
+ * ver spec-gestor-trafego-ia.md secao 4.3: "o mercado e ciclico, um criativo/estrategia
+ * que funcionou ha mais tempo pode voltar a funcionar"). A Meta nao tem preset pronto
+ * pra esses numeros (so last_7d/14d/28d/30d/90d/maximum) - confirmado na doc oficial,
+ * por isso usa `time_range` com since/until calculados aqui, nao date_preset.
+ *
+ * Chamada sob demanda (a JAMILE decide quando pesquisar, nunca dispara sozinha em
+ * background) - mesmo espirito de search_public_ad_library, nao o padrao de
+ * live-fetch por carregamento de tela que foi removido do dashboard.
+ */
+export async function fetchMetaHistoricalWindows(
+  credential: PlatformCredential,
+  params: { campaignId?: string; windowsDays: number[] }
+): Promise<HistoricalWindowSummary[]> {
+  const account = accountId(credential);
+  const token = encodeURIComponent(credential.accessToken);
+
+  let singleCampaignObjective: string | null = null;
+  if (params.campaignId) {
+    try {
+      const response = await fetch(
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${params.campaignId}?fields=objective&access_token=${token}`
+      );
+      const body = (await response.json()) as { objective?: string; error?: { message: string } };
+      if (!response.ok || body.error) {
+        throw new Error(body.error?.message ?? response.statusText);
+      }
+      singleCampaignObjective = body.objective ?? null;
+    } catch {
+      // Sem o objetivo, cada janela ainda tenta resolver via fallback do
+      // resolveResultMetric - nao vale abortar a pesquisa inteira por isso.
+    }
+  }
+
+  const results: HistoricalWindowSummary[] = [];
+  for (const days of params.windowsDays) {
+    const { since, until } = windowRange(days);
+    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+    const insightFields = "spend,impressions,clicks,actions";
+    const url = params.campaignId
+      ? `https://graph.facebook.com/${GRAPH_API_VERSION}/${params.campaignId}/insights?time_range=${timeRange}&fields=${insightFields}&access_token=${token}`
+      : `https://graph.facebook.com/${GRAPH_API_VERSION}/${account}/insights?level=account&time_range=${timeRange}&fields=${insightFields}&access_token=${token}`;
+
+    try {
+      const response = await fetch(url);
+      recordMetaThrottle(response, account);
+      const body = (await response.json()) as MetaApiResponse<MetaCampaignInsightRow>;
+      if (!response.ok || body.error) {
+        throw new Error(`Meta API error: (#${body.error?.code ?? "?"}) ${body.error?.message ?? response.statusText}`);
+      }
+      const row = body.data?.[0];
+      const spend = Number(row?.spend || 0);
+      const result = params.campaignId ? resolveResultMetric(row?.actions, singleCampaignObjective) : null;
+      results.push({
+        days,
+        since,
+        until,
+        spend,
+        impressions: Number(row?.impressions || 0),
+        clicks: Number(row?.clicks || 0),
+        results: result?.value ?? null,
+        resultType: result?.resultType ?? null,
+        cpr: result && result.value > 0 ? spend / result.value : null,
+      });
+    } catch (error) {
+      results.push({
+        days,
+        since,
+        until,
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        results: null,
+        resultType: null,
+        cpr: null,
+        errorMessage: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+  return results;
+}
+
 export async function fetchMetaCampaignInsights(
   credential: PlatformCredential,
   opts?: { datePreset?: string }

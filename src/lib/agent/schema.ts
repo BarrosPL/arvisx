@@ -193,6 +193,23 @@ export const listProposalsArgsSchema = z.object({
   limit: z.number().int().min(1).max(30).default(15),
 });
 
+/** As 6 janelas canonicas da spec (30/60/90/120/360/720 dias) - a Meta nao tem preset
+ * pronto pra nenhuma delas alem de 30/90, entao o valor vira time_range calculado
+ * (ver fetchMetaHistoricalWindows). Aceita subconjunto pra nao forcar sempre as 6. */
+export const getHistoricalPerformanceArgsSchema = z.object({
+  platformCampaignId: z
+    .string()
+    .optional()
+    .describe("Id real de UMA campanha - omitir pra ver a conta inteira agregada."),
+  windowsDays: z
+    .array(z.number().int().positive().max(1100))
+    .min(1)
+    .max(6)
+    .default([30, 60, 90, 120, 360, 720]),
+});
+
+export type GetHistoricalPerformanceArgs = z.infer<typeof getHistoricalPerformanceArgsSchema>;
+
 export type ListProposalsArgs = z.infer<typeof listProposalsArgsSchema>;
 
 /**
@@ -254,6 +271,12 @@ export const listProposalsChatArgsSchema = listProposalsArgsSchema.extend({
 });
 
 export type ListProposalsChatArgs = z.infer<typeof listProposalsChatArgsSchema>;
+
+export const getHistoricalPerformanceChatArgsSchema = getHistoricalPerformanceArgsSchema.extend({
+  accountId: z.string(),
+});
+
+export type GetHistoricalPerformanceChatArgs = z.infer<typeof getHistoricalPerformanceChatArgsSchema>;
 
 export const listCustomAudiencesChatArgsSchema = z.object({
   accountId: z.string(),

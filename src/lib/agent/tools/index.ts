@@ -10,6 +10,7 @@ import {
   searchPublicAdLibraryArgsSchema,
   listCustomAudiencesArgsSchema,
   listProposalsArgsSchema,
+  getHistoricalPerformanceArgsSchema,
   researchStubArgsSchema,
   getRankingChatArgsSchema,
   getMetricsChatArgsSchema,
@@ -21,6 +22,7 @@ import {
   searchPublicAdLibraryChatArgsSchema,
   listCustomAudiencesChatArgsSchema,
   listProposalsChatArgsSchema,
+  getHistoricalPerformanceChatArgsSchema,
   proposalPayloadChatSchema,
   getProposalChatArgsSchema,
   resolveProposalChatArgsSchema,
@@ -38,6 +40,7 @@ import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
 import { listCustomAudiences } from "./listCustomAudiences";
 import { listProposals } from "./listProposals";
+import { getHistoricalPerformance } from "./getHistoricalPerformance";
 import { proposeAction } from "./proposeAction";
 import { researchStub } from "./researchStub";
 import { getProposal } from "./getProposal";
@@ -328,6 +331,31 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_historical_performance",
+      description:
+        "Performance em MULTIPLAS janelas de lookback (30/60/90/120/360/720 dias) - so Meta. Use ANTES de propor uma campanha nova ou uma mudanca grande de estrategia pra um tema/publico, pra ver se algo que funcionou ha mais tempo (e nao so nos ultimos 7 dias) pode valer a pena retomar - o mercado e ciclico, uma estrategia parada nao e a mesma coisa que uma estrategia ruim. Sem platformCampaignId, agrega a CONTA INTEIRA (results/resultType/cpr vem null de proposito - campanhas com objetivos diferentes nao podem ser somadas como se fossem o mesmo tipo de resultado). Com platformCampaignId, foca em UMA campanha e ja resolve o Resultado certo pro objetivo dela. Chamada ao vivo na Meta (nao ha historico proprio de 360/720 dias no banco ainda) - use com intencao, nao em toda pergunta.",
+      parameters: {
+        type: "object",
+        properties: {
+          platformCampaignId: {
+            type: "string",
+            description: "Id real de uma campanha especifica - omitir pra ver a conta inteira agregada.",
+          },
+          windowsDays: {
+            type: "array",
+            items: { type: "integer", minimum: 1, maximum: 1100 },
+            minItems: 1,
+            maxItems: 6,
+            description: "Janelas em dias. Padrao: [30, 60, 90, 120, 360, 720] (as 6 da spec).",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "propose_action",
       description:
         "Cria uma proposta de acao pendente de aprovacao humana. Esta e a UNICA acao que voce pode tomar - nunca executa nada de fato.",
@@ -394,6 +422,8 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
         return await listCustomAudiences(ctx.accountId);
       case "list_proposals":
         return await listProposals(ctx.accountId, listProposalsArgsSchema.parse(parsedJson));
+      case "get_historical_performance":
+        return await getHistoricalPerformance(ctx.accountId, getHistoricalPerformanceArgsSchema.parse(parsedJson));
       case "propose_action":
         return await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId }, proposalPayloadSchema.parse(parsedJson));
       case "research_market":
@@ -425,6 +455,7 @@ const ACCOUNT_SCOPED_TOOL_NAMES = new Set([
   "search_public_ad_library",
   "list_custom_audiences",
   "list_proposals",
+  "get_historical_performance",
   "propose_action",
 ]);
 
@@ -652,6 +683,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = listProposalsChatArgsSchema.parse(parsedJson);
         assertAccountAccess(ctx, args.accountId);
         return await listProposals(args.accountId, args);
+      }
+      case "get_historical_performance": {
+        const args = getHistoricalPerformanceChatArgsSchema.parse(parsedJson);
+        assertAccountAccess(ctx, args.accountId);
+        return await getHistoricalPerformance(args.accountId, args);
       }
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);
