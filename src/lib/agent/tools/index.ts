@@ -8,6 +8,7 @@ import {
   getAdBudgetArgsSchema,
   getAdLibraryArgsSchema,
   searchPublicAdLibraryArgsSchema,
+  listCustomAudiencesArgsSchema,
   researchStubArgsSchema,
   getRankingChatArgsSchema,
   getMetricsChatArgsSchema,
@@ -17,6 +18,7 @@ import {
   getAdBudgetChatArgsSchema,
   getAdLibraryChatArgsSchema,
   searchPublicAdLibraryChatArgsSchema,
+  listCustomAudiencesChatArgsSchema,
   proposalPayloadChatSchema,
   getProposalChatArgsSchema,
   resolveProposalChatArgsSchema,
@@ -32,6 +34,7 @@ import { getCampaigns } from "./getCampaigns";
 import { getAdBudget } from "./getAdBudget";
 import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
+import { listCustomAudiences } from "./listCustomAudiences";
 import { proposeAction } from "./proposeAction";
 import { researchStub } from "./researchStub";
 import { getProposal } from "./getProposal";
@@ -293,6 +296,15 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "list_custom_audiences",
+      description:
+        "Lista os publicos personalizados (Custom Audiences) ja criados na conta Meta, com tamanho aproximado e status de entrega. So existe para Meta. Use antes de propor um publico novo (lookalike, exclusao por camada de funil) pra nao recriar um que ja existe.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "propose_action",
       description:
         "Cria uma proposta de acao pendente de aprovacao humana. Esta e a UNICA acao que voce pode tomar - nunca executa nada de fato.",
@@ -354,6 +366,9 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
         return await getAdLibrary(ctx.accountId, getAdLibraryArgsSchema.parse(parsedJson));
       case "search_public_ad_library":
         return await searchPublicAdLibrary(ctx.accountId, searchPublicAdLibraryArgsSchema.parse(parsedJson));
+      case "list_custom_audiences":
+        listCustomAudiencesArgsSchema.parse(parsedJson);
+        return await listCustomAudiences(ctx.accountId);
       case "propose_action":
         return await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId }, proposalPayloadSchema.parse(parsedJson));
       case "research_market":
@@ -383,6 +398,7 @@ const ACCOUNT_SCOPED_TOOL_NAMES = new Set([
   "get_ad_budget",
   "get_ad_library",
   "search_public_ad_library",
+  "list_custom_audiences",
   "propose_action",
 ]);
 
@@ -600,6 +616,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = searchPublicAdLibraryChatArgsSchema.parse(parsedJson);
         assertAccountAccess(ctx, args.accountId);
         return await searchPublicAdLibrary(args.accountId, args);
+      }
+      case "list_custom_audiences": {
+        const args = listCustomAudiencesChatArgsSchema.parse(parsedJson);
+        assertAccountAccess(ctx, args.accountId);
+        return await listCustomAudiences(args.accountId);
       }
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);

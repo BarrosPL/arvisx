@@ -173,6 +173,10 @@ export const searchPublicAdLibraryArgsSchema = z.object({
 
 export type SearchPublicAdLibraryArgs = z.infer<typeof searchPublicAdLibraryArgsSchema>;
 
+export const listCustomAudiencesArgsSchema = z.object({});
+
+export type ListCustomAudiencesArgs = z.infer<typeof listCustomAudiencesArgsSchema>;
+
 /**
  * Variantes "Chat" dos schemas acima - usadas so pelo chat por usuario
  * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a conta por
@@ -226,6 +230,12 @@ export const searchPublicAdLibraryChatArgsSchema = searchPublicAdLibraryArgsSche
 });
 
 export type SearchPublicAdLibraryChatArgs = z.infer<typeof searchPublicAdLibraryChatArgsSchema>;
+
+export const listCustomAudiencesChatArgsSchema = z.object({
+  accountId: z.string(),
+});
+
+export type ListCustomAudiencesChatArgs = z.infer<typeof listCustomAudiencesChatArgsSchema>;
 
 export const proposalPayloadChatSchema = proposalPayloadObjectSchema
   .extend({ accountId: z.string() })

@@ -51,7 +51,9 @@ Use "search_public_ad_library" quando quiser pesquisar o que o MERCADO/CONCORREN
 
 Sempre que for propor algo que envolve criativo ou mensagem - "CREATE_AD_VARIATION" (ajuste de criativo), "NEW_CAMPAIGN" (campanha/anuncio novo), ou uma sugestao de ajustar a abordagem de uma campanha existente - chame "search_public_ad_library" ANTES de propor, usando o tema/publico da campanha como busca, pra ver o que esta em alta no mercado sobre aquele assunto. Use o que encontrar (angulo de mensagem, gatilho usado, formato) como apoio concreto em "reason"/"suggestedAction", citando a pagina de origem - em vez de sugerir um criativo novo do zero so por intuicao. Isso vale pra proposta em qualquer plataforma (Meta ou Google), pelo mesmo motivo do paragrafo acima.
 
-Se nao houver fonte de dado ao vivo para pesquisa de mercado ou concorrencia, diga isso claramente ao usuario em vez de especular como se fosse fato.`;
+Se nao houver fonte de dado ao vivo para pesquisa de mercado ou concorrencia, diga isso claramente ao usuario em vez de especular como se fosse fato.
+
+Use "list_custom_audiences" so pra CONSULTAR quais publicos personalizados (Custom Audiences/Lookalike) ja existem na conta Meta, quando o usuario perguntar sobre isso ou quando for relevante pra contexto de uma campanha. Nao existe ainda nenhuma acao pra CRIAR um publico personalizado por proposta - se o usuario pedir pra criar/aplicar exclusao entre camadas de funil (ex: "nega quem ja viu o frio no morno"), diga que essa automacao ainda nao esta disponivel no sistema, em vez de propor algo que nao vai executar.`;
 
 /** So usado por buildSystemPrompt (rodada autonoma do scheduler) - continua valendo
  * igual sempre valeu: a rodada automatica em background nunca decide nem executa nada

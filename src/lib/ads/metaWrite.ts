@@ -473,6 +473,14 @@ export interface MetaAdSetTargeting {
   ageMin: number;
   ageMax: number;
   interestIds: string[];
+  /** Inclui gente desses publicos personalizados (ex: lookalike 1%, ou quem engajou
+   * com o morno pra alcancar no quente). Formato confirmado na doc oficial da Meta:
+   * lista de ids numericos aceita direto em `custom_audiences`. */
+  customAudienceIds?: string[];
+  /** Nega quem esta nesses publicos - e o mecanismo que implementa "ja viu, nao
+   * converteu, nao mostra de novo" (spec-gestor-trafego-ia.md secao 2/5): o AdSet de
+   * Morno recebe aqui o publico de quem ja esta em Frio, e assim por diante. */
+  excludedCustomAudienceIds?: string[];
 }
 
 export interface CreateAdSetResult {
@@ -495,6 +503,12 @@ export async function createMetaAdSet(
   };
   if (params.targeting.interestIds.length > 0) {
     targeting.flexible_spec = [{ interests: params.targeting.interestIds.map((id) => ({ id })) }];
+  }
+  if (params.targeting.customAudienceIds && params.targeting.customAudienceIds.length > 0) {
+    targeting.custom_audiences = params.targeting.customAudienceIds.map((id) => ({ id }));
+  }
+  if (params.targeting.excludedCustomAudienceIds && params.targeting.excludedCustomAudienceIds.length > 0) {
+    targeting.excluded_custom_audiences = params.targeting.excludedCustomAudienceIds.map((id) => ({ id }));
   }
   const body = {
     name: params.name,
