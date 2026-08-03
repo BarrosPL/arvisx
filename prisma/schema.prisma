@@ -496,6 +496,34 @@ model ExecutionLog {
   @@schema("arvisx")
 }
 
+/**
+ * Blob servido publicamente, sem autenticacao, por id (cuid - 128 bits de entropia,
+ * impraticavel de adivinhar; nao ha rota de listagem, so leitura por id exato).
+ *
+ * Existe por UMA razao concreta: a Meta baixa a thumbnail de um anuncio em video
+ * (object_story_spec.video_data.image_url) fazendo uma requisicao HTTP normal a partir
+ * dos servidores dela - nao aceita upload de bytes nem token de sessao nosso. image_hash
+ * (o mecanismo que anuncio de IMAGEM usa, sem precisar de URL publica) nao e aceito
+ * nesse campo segundo a doc oficial. Ver createMetaVideoAdCreative em metaWrite.ts.
+ *
+ * So existe caminho de ESCRITA server-side (nenhuma rota POST publica) - o que evita
+ * este endpoint virar hospedagem publica de arquivo arbitrario para qualquer um que
+ * descubra a URL de upload. So o GET e publico, de proposito.
+ *
+ * Sem limpeza automatica ainda - cresce sem limite. Aceitavel enquanto o volume for
+ * baixo (uma thumbnail por campanha de video criada); se isso crescer, precisa de job
+ * de retencao (ex: apagar registro nao referenciado por proposta nenhuma ha X dias).
+ */
+model PublicMediaAsset {
+  id         String   @id @default(cuid())
+  mimeType   String
+  data       Bytes
+  byteLength Int
+  createdAt  DateTime @default(now())
+
+  @@schema("arvisx")
+}
+
 // ---------- Observabilidade ----------
 
 model SchedulerRun {
