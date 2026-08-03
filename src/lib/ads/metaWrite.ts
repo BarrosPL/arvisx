@@ -401,6 +401,44 @@ export async function uploadMetaAdImage(
   }
 }
 
+/**
+ * Sobe um video pra biblioteca de midia da conta (POST /advideos). Diferente de
+ * uploadMetaAdImage: o campo `source` e documentado pela Meta como "o video, codificado
+ * como form data" - upload multipart, nao JSON com base64 (mecanica confirmada na
+ * tabela de parametros oficial do endpoint /advideos, mesmo sem exemplo de codigo
+ * literal na doc consultada). Devolve o video_id exigido por createMetaVideoAdCreative.
+ *
+ * So cobre upload de arquivo pequeno numa chamada so - a Meta documenta um modo de
+ * upload em pedacos (upload_phase/upload_session_id/start_offset/end_offset) pra
+ * arquivo grande, que NAO esta implementado aqui (nao confirmado o fluxo completo).
+ * Video de anuncio real costuma ser pequeno o bastante pra isto bastar; se a Meta
+ * comecar a rejeitar por tamanho, e o sinal de que o modo em pedacos precisa entrar.
+ */
+export async function uploadMetaAdVideo(
+  credential: PlatformCredential,
+  params: { base64Data: string; mimeType: string; title?: string }
+): Promise<{ ok: boolean; videoId?: string; errorMessage?: string }> {
+  const accountId = toAccountId(credential.externalAccountId);
+  try {
+    const bytes = Buffer.from(params.base64Data, "base64");
+    const form = new FormData();
+    form.append("source", new Blob([bytes], { type: params.mimeType }), "video");
+    if (params.title) form.append("title", params.title);
+
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/advideos?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", body: form }
+    );
+    const body = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || body.error || !body.id) {
+      throw new Error(`Meta API error (subir video): ${body.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, videoId: body.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
 /** Busca a(s) Pagina(s) do Facebook associada(s) a conta de anuncio - obrigatoria pra
  * criar um Ad Creative (object_story_spec.page_id). Falha com erro claro se nao achar
  * nenhuma ou achar mais de uma (nao adivinha qual usar). */
@@ -576,6 +614,66 @@ export async function createMetaAdCreative(
     const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
     if (!response.ok || result.error || !result.id) {
       throw new Error(`Meta API error (criar Ad Creative): ${result.error?.message ?? response.statusText}`);
+    }
+    return { ok: true, creativeId: result.id };
+  } catch (error) {
+    return { ok: false, errorMessage: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
+}
+
+/**
+ * Cria o objeto de criativo em formato VIDEO (video_data) - contraparte de
+ * createMetaAdCreative (que so cobre imagem/link_data). Formato confirmado por dois
+ * exemplos literais na doc oficial (guia "Video Ads"): video_id, image_url (thumbnail),
+ * call_to_action.value.link, link_description.
+ *
+ * PENDENCIA REAL, nao adivinhada: video_data exige `image_url` (uma URL publica de
+ * thumbnail), nao `image_hash` como o caminho de imagem usa - a doc consultada nunca
+ * mostrou image_hash como alternativa aceita aqui, entao nao assumi que funciona.
+ * Isso empurra uma pergunta de arquitetura pra quem for ligar isto no fluxo de
+ * proposta/execucao: de onde vem essa URL publica? O video recem-enviado nao tem uma
+ * thumbnail pronta na hora (processamento e assincrono do lado da Meta) - portanto
+ * `thumbnailImageUrl` e OBRIGATORIO e fornecido por quem chama, em vez desta funcao
+ * tentar descobrir/gerar uma sozinha.
+ *
+ * Tambem confirmado como AUSENTE em video_data (verificado explicitamente na doc): nao
+ * ha campo "message" nem "title" pra texto principal do anuncio (o que link_data.message
+ * cobre no caminho de imagem) - por isso esta funcao nao aceita "primaryText": nao existe
+ * onde colocar esse texto dentro de video_data segundo a doc consultada.
+ */
+export async function createMetaVideoAdCreative(
+  credential: PlatformCredential,
+  params: {
+    pageId: string;
+    videoId: string;
+    thumbnailImageUrl: string;
+    linkDescription: string;
+    callToAction: string;
+    linkUrl: string;
+    name: string;
+  }
+): Promise<CreateAdCreativeResult> {
+  const accountId = toAccountId(credential.externalAccountId);
+  const body = {
+    name: params.name,
+    object_story_spec: {
+      page_id: params.pageId,
+      video_data: {
+        video_id: params.videoId,
+        image_url: params.thumbnailImageUrl,
+        link_description: params.linkDescription,
+        call_to_action: { type: params.callToAction, value: { link: params.linkUrl } },
+      },
+    },
+  };
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${accountId}/adcreatives?access_token=${encodeURIComponent(credential.accessToken)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    const result = (await response.json()) as MetaApiErrorResponse & { id?: string };
+    if (!response.ok || result.error || !result.id) {
+      throw new Error(`Meta API error (criar Ad Creative de video): ${result.error?.message ?? response.statusText}`);
     }
     return { ok: true, creativeId: result.id };
   } catch (error) {
