@@ -9,6 +9,7 @@ import {
   getAdLibraryArgsSchema,
   searchPublicAdLibraryArgsSchema,
   listCustomAudiencesArgsSchema,
+  listProposalsArgsSchema,
   researchStubArgsSchema,
   getRankingChatArgsSchema,
   getMetricsChatArgsSchema,
@@ -19,6 +20,7 @@ import {
   getAdLibraryChatArgsSchema,
   searchPublicAdLibraryChatArgsSchema,
   listCustomAudiencesChatArgsSchema,
+  listProposalsChatArgsSchema,
   proposalPayloadChatSchema,
   getProposalChatArgsSchema,
   resolveProposalChatArgsSchema,
@@ -35,6 +37,7 @@ import { getAdBudget } from "./getAdBudget";
 import { getAdLibrary } from "./getAdLibrary";
 import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
 import { listCustomAudiences } from "./listCustomAudiences";
+import { listProposals } from "./listProposals";
 import { proposeAction } from "./proposeAction";
 import { researchStub } from "./researchStub";
 import { getProposal } from "./getProposal";
@@ -305,6 +308,26 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "list_proposals",
+      description:
+        "Lista as propostas mais recentes de uma conta (titulo, tipo, status, plataforma, data) - use quando o usuario referenciar uma proposta por DESCRICAO em vez de id exato (ex: 'aquela proposta de pausar a campanha X', 'a proposta de ontem'), pra achar o id certo antes de chamar get_proposal ou decidir sobre ela. Nunca invente um id - se mais de uma proposta parecer compativel, pergunte ao usuario qual delas.",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            enum: ["NEEDS_MORE_DATA", "PENDING", "APPROVED", "REJECTED", "TEST", "ADJUST", "EXECUTED", "EXECUTION_FAILED"],
+            description: "Filtra por status. Omitir pra ver de qualquer status.",
+          },
+          limit: { type: "integer", minimum: 1, maximum: 30, default: 15 },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "propose_action",
       description:
         "Cria uma proposta de acao pendente de aprovacao humana. Esta e a UNICA acao que voce pode tomar - nunca executa nada de fato.",
@@ -369,6 +392,8 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
       case "list_custom_audiences":
         listCustomAudiencesArgsSchema.parse(parsedJson);
         return await listCustomAudiences(ctx.accountId);
+      case "list_proposals":
+        return await listProposals(ctx.accountId, listProposalsArgsSchema.parse(parsedJson));
       case "propose_action":
         return await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId }, proposalPayloadSchema.parse(parsedJson));
       case "research_market":
@@ -399,6 +424,7 @@ const ACCOUNT_SCOPED_TOOL_NAMES = new Set([
   "get_ad_library",
   "search_public_ad_library",
   "list_custom_audiences",
+  "list_proposals",
   "propose_action",
 ]);
 
@@ -621,6 +647,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         const args = listCustomAudiencesChatArgsSchema.parse(parsedJson);
         assertAccountAccess(ctx, args.accountId);
         return await listCustomAudiences(args.accountId);
+      }
+      case "list_proposals": {
+        const args = listProposalsChatArgsSchema.parse(parsedJson);
+        assertAccountAccess(ctx, args.accountId);
+        return await listProposals(args.accountId, args);
       }
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);

@@ -3,17 +3,41 @@ import { prisma } from "@/lib/prisma";
 import { openai, AGENT_MODEL } from "@/lib/openai";
 import { buildUserScopedSystemPrompt } from "@/lib/agent/persona";
 import { TOOL_DEFS_CHAT, dispatchChatTool, extractAccountIdFromArgs, type ChatToolContext } from "@/lib/agent/tools";
+import { getProposal } from "@/lib/agent/tools/getProposal";
+import { planSummarization } from "@/lib/agent/summarizationPlan";
+import { foldMessagesIntoSummary } from "@/lib/agent/contextSummary";
 import type { Message } from "@/generated/prisma/client";
 
 const MAX_ITERATIONS = 8;
-const MAX_HISTORY_MESSAGES = 40;
 
-/** Uma unica conversa continua por usuario - cria na primeira mensagem. */
-export async function getOrCreateUserThread(userId: string) {
-  return prisma.conversationThread.upsert({
-    where: { userId },
-    update: {},
-    create: { userId },
+/**
+ * A thread ATIVA do usuario (no maximo uma por vez - imposto por indice unico parcial
+ * na migration, nao so por convencao de app). "Nova conversa" arquiva esta e cria
+ * outra (ver startNewUserThread) - threads antigas nunca sao apagadas.
+ */
+export async function getActiveUserThread(userId: string) {
+  const existing = await prisma.conversationThread.findFirst({ where: { userId, isActive: true } });
+  if (existing) return existing;
+
+  try {
+    return await prisma.conversationThread.create({ data: { userId, isActive: true } });
+  } catch {
+    // Corrida rara (duas requisicoes tentando criar a primeira thread do usuario ao
+    // mesmo tempo): o indice unico parcial bloqueia a segunda - so buscar de novo
+    // resolve, sem precisar de lock explicito pra um caso tao raro.
+    return prisma.conversationThread.findFirstOrThrow({ where: { userId, isActive: true } });
+  }
+}
+
+/**
+ * "Nova conversa": arquiva a thread ativa atual (isActive=false, nunca apagada - todo
+ * o historico dela continua no banco) e cria uma em branco. Numa transacao pra nunca
+ * existir um instante com zero OU duas threads ativas.
+ */
+export async function startNewUserThread(userId: string) {
+  return prisma.$transaction(async (tx) => {
+    await tx.conversationThread.updateMany({ where: { userId, isActive: true }, data: { isActive: false } });
+    return tx.conversationThread.create({ data: { userId, isActive: true } });
   });
 }
 
@@ -51,8 +75,25 @@ function mapHistoryToOpenAi(messages: Message[]): ChatCompletionMessageParam[] {
  * CADA chamada contra a lista real de contas do usuario (assertAccountAccess em
  * agent/tools/index.ts) antes de ler/escrever qualquer coisa. Isso e imposto em codigo,
  * no ponto exato onde o dado e acessado.
+ *
+ * Memoria de longo prazo: em vez de so mandar as ultimas N mensagens (o que fazia
+ * assunto de semanas atras sumir de vez do que a JAMILE "lembra", mesmo a tela
+ * mostrando o historico inteiro), o que sai da janela verbatim vira resumo cumulativo
+ * (ver lib/agent/contextSummary.ts) persistido na propria thread - nada e descartado
+ * silenciosamente.
  */
-export async function runAgentTurn(threadId: string, userText: string): Promise<Message[]> {
+export async function runAgentTurn(
+  threadId: string,
+  userText: string,
+  options?: {
+    /** Id de uma proposta especifica que o turno e "sobre" (ex: usuario clicou numa
+     * notificacao) - injeta o detalhe completo dela como contexto so deste turno, sem
+     * exigir que o usuario ou o texto pre-preenchido carreguem o id cru. Nunca vira
+     * Message persistida: e sempre buscado fresco, pra nunca mostrar proposta
+     * desatualizada se o status mudou entre a notificacao ser gerada e o clique. */
+    contextProposalId?: string;
+  }
+): Promise<Message[]> {
   const thread = await prisma.conversationThread.findUniqueOrThrow({
     where: { id: threadId },
   });
@@ -68,15 +109,59 @@ export async function runAgentTurn(threadId: string, userText: string): Promise<
   });
   const allowedAccountIds = new Set(accounts.map((account) => account.id));
 
-  const history = await prisma.message.findMany({
-    where: { threadId },
+  // So USER/ASSISTANT (o mesmo par que mapHistoryToOpenAi usa) - TOOL/SYSTEM nao
+  // participam da janela de resumo, entao nem vale a pena buscar o payload deles aqui.
+  const conversational = await prisma.message.findMany({
+    where: { threadId, role: { in: ["USER", "ASSISTANT"] } },
     orderBy: { createdAt: "asc" },
   });
 
+  const cursorIndex = thread.summarizedUpToMessageId
+    ? conversational.findIndex((message) => message.id === thread.summarizedUpToMessageId)
+    : -1;
+  const sinceLastSummary = conversational.slice(cursorIndex + 1);
+
+  const plan = planSummarization(sinceLastSummary);
+  let contextSummary = thread.contextSummary;
+  if (plan.shouldSummarize) {
+    contextSummary = await foldMessagesIntoSummary(contextSummary, plan.toFold);
+    const newCursorId = plan.toFold[plan.toFold.length - 1].id;
+    await prisma.conversationThread.update({
+      where: { id: threadId },
+      data: { contextSummary, summarizedUpToMessageId: newCursorId },
+    });
+  }
+
   const openaiMessages: ChatCompletionMessageParam[] = [
     { role: "system", content: buildUserScopedSystemPrompt(accounts) },
-    ...mapHistoryToOpenAi(history.slice(-MAX_HISTORY_MESSAGES)),
+    ...(contextSummary
+      ? [{ role: "system" as const, content: `Resumo da conversa anterior com este usuário:\n${contextSummary}` }]
+      : []),
+    ...mapHistoryToOpenAi(plan.verbatimTail),
   ];
+
+  // Contexto estrutural de uma proposta especifica (veio de notificacao) - injetado
+  // logo antes do turno do usuario, pra ficar com a maxima atencao do modelo nesta
+  // resposta. Falha em silencio (so nao injeta) se a proposta sumiu ou nao e do
+  // usuario - nunca derruba o turno por causa disso.
+  if (options?.contextProposalId) {
+    try {
+      const proposalRecord = await prisma.proposal.findUniqueOrThrow({
+        where: { id: options.contextProposalId },
+        select: { credentialId: true },
+      });
+      if (allowedAccountIds.has(proposalRecord.credentialId)) {
+        const detail = await getProposal(proposalRecord.credentialId, options.contextProposalId);
+        openaiMessages.splice(openaiMessages.length - 1, 0, {
+          role: "system",
+          content: `O usuário está falando sobre esta proposta específica agora:\n${JSON.stringify(detail)}`,
+        });
+      }
+    } catch {
+      // Proposta apagada/inacessivel entre a notificacao ser gerada e o clique - segue
+      // o turno normalmente, sem esse contexto extra.
+    }
+  }
 
   const toolMessages: Message[] = [];
   const ctx: ChatToolContext = { userId: thread.userId, threadId, allowedAccountIds };

@@ -362,17 +362,30 @@ model RankingSnapshot {
 }
 
 model ConversationThread {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  title         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastMessageAt DateTime?
+  id                      String    @id @default(cuid())
+  userId                  String
+  title                   String?
+  // So uma thread ACTIVE por usuario por vez - garantido de verdade por um indice unico
+  // PARCIAL na migration (Prisma nao expressa indice parcial no schema.prisma, so o
+  // "@@index" comum abaixo pra performance de busca). "Nova conversa" desativa a atual e
+  // cria outra - nunca apaga, so arquiva (isActive=false continua toda no banco).
+  isActive                Boolean   @default(true)
+  // Resumo cumulativo do que ja saiu da janela verbatim enviada a LLM (ver
+  // lib/agent/contextSummary.ts) - o que evita que assunto de semanas atras suma de
+  // vez do que a JAMILE consegue "lembrar" so porque a thread cresceu.
+  contextSummary          String?   @db.Text
+  // Ate qual Message (USER/ASSISTANT) o contextSummary ja cobre - tudo depois dessa
+  // mensagem ainda nao foi dobrado no resumo.
+  summarizedUpToMessageId String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  lastMessageAt           DateTime?
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
   proposals Proposal[]
 
+  @@index([userId])
   @@schema("arvisx")
 }
 
@@ -403,31 +416,31 @@ model Message {
 }
 
 model Proposal {
-  id                    String         @id @default(cuid())
-  credentialId          String
-  threadId              String?
-  createdByUserId       String? // null quando criado pelo scheduler/agente de forma autonoma
-  type                  ProposalType
-  status                ProposalStatus @default(PENDING)
-  title                 String
-  reason                String         @db.Text
-  metricsJson           Json // metricas citadas para justificar a recomendacao
-  suggestedAction       String         @db.Text
-  risk                  String         @db.Text
-  rollbackPlan          String         @db.Text
-  platform              Platform?
-  platformCampaignId    String?
-  platformAdId          String?
+  id                         String         @id @default(cuid())
+  credentialId               String
+  threadId                   String?
+  createdByUserId            String? // null quando criado pelo scheduler/agente de forma autonoma
+  type                       ProposalType
+  status                     ProposalStatus @default(PENDING)
+  title                      String
+  reason                     String         @db.Text
+  metricsJson                Json // metricas citadas para justificar a recomendacao
+  suggestedAction            String         @db.Text
+  risk                       String         @db.Text
+  rollbackPlan               String         @db.Text
+  platform                   Platform?
+  platformCampaignId         String?
+  platformAdId               String?
   // Meta: id do AdSet (onde a verba mora - necessario pra executar ADJUST_BUDGET).
   // Google: id do AdGroup (necessario pra executar PAUSE_AD/ACTIVATE_AD).
-  platformAdSetId       String?
-  payloadJson           Json // proposta estruturada completa (budget, creative brief, etc.)
+  platformAdSetId            String?
+  payloadJson                Json // proposta estruturada completa (budget, creative brief, etc.)
   // So para NEW_CAMPAIGN: imagem do anuncio anexada por um humano na revisao (a JAMILE
   // nunca gera/promete imagem - so texto/segmentacao/orcamento via payloadJson.campaignPlan).
   // Caminho de IMAGEM - mutuamente exclusivo com os 4 campos de video abaixo (uma
   // proposta usa um ou outro, nunca os dois - ver rota creative-video-asset).
-  creativeAssetData     Bytes?
-  creativeAssetMimeType String?
+  creativeAssetData          Bytes?
+  creativeAssetMimeType      String?
   // Caminho de VIDEO - dois blobs, porque um anuncio em video precisa de DOIS arquivos:
   // o video em si (creativeVideoData) e uma imagem de capa/thumbnail (creativeCoverImageData)
   // que o executor hospeda publicamente (lib/media/publicAssets.ts) antes de criar o
@@ -438,11 +451,11 @@ model Proposal {
   creativeVideoMimeType      String?
   creativeCoverImageData     Bytes?
   creativeCoverImageMimeType String?
-  decidedByUserId       String?
-  decidedAt             DateTime?
-  decisionNote          String?
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
+  decidedByUserId            String?
+  decidedAt                  DateTime?
+  decisionNote               String?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
 
   credential AdCredential        @relation(fields: [credentialId], references: [id], onDelete: Cascade)
   thread     ConversationThread? @relation(fields: [threadId], references: [id])
@@ -511,17 +524,14 @@ model ExecutionLog {
 /**
  * Blob servido publicamente, sem autenticacao, por id (cuid - 128 bits de entropia,
  * impraticavel de adivinhar; nao ha rota de listagem, so leitura por id exato).
- *
  * Existe por UMA razao concreta: a Meta baixa a thumbnail de um anuncio em video
  * (object_story_spec.video_data.image_url) fazendo uma requisicao HTTP normal a partir
  * dos servidores dela - nao aceita upload de bytes nem token de sessao nosso. image_hash
  * (o mecanismo que anuncio de IMAGEM usa, sem precisar de URL publica) nao e aceito
  * nesse campo segundo a doc oficial. Ver createMetaVideoAdCreative em metaWrite.ts.
- *
  * So existe caminho de ESCRITA server-side (nenhuma rota POST publica) - o que evita
  * este endpoint virar hospedagem publica de arquivo arbitrario para qualquer um que
  * descubra a URL de upload. So o GET e publico, de proposito.
- *
  * Sem limpeza automatica ainda - cresce sem limite. Aceitavel enquanto o volume for
  * baixo (uma thumbnail por campanha de video criada); se isso crescer, precisa de job
  * de retencao (ex: apagar registro nao referenciado por proposta nenhuma ha X dias).

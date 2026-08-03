@@ -74,7 +74,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           tone: "danger",
           title: `Falha ao executar: ${proposal.title}`,
           description: proposal.executions[0]?.errorMessage ? `${name} · ${proposal.executions[0].errorMessage}` : name,
-          prefill: `Por que a execução da proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}) falhou?`,
+          prefill: `Por que a execução da proposta "${proposal.title}" falhou?`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });
@@ -84,7 +84,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           tone: "warning",
           title: `Precisa de mais dados: ${proposal.title}`,
           description: name,
-          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}) que está aguardando dado.`,
+          prefill: `Me explica a proposta "${proposal.title}" que está aguardando dado.`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });
@@ -94,7 +94,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           tone: "info",
           title: proposal.title,
           description: name,
-          prefill: `Me explica a proposta "${proposal.title}" (id: ${proposal.id}, conta: ${name}).`,
+          prefill: `Me explica a proposta "${proposal.title}".`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
         });

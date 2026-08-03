@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, Send, Sparkles, Wrench, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, RotateCcw, Send, Sparkles, Wrench, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
@@ -258,6 +258,66 @@ function ChatCreativeAssetUpload({ proposalId }: { proposalId: string }) {
   );
 }
 
+/**
+ * "Nova conversa" - arquiva a thread atual (nunca apaga, ver startNewUserThread em
+ * orchestrator.ts) e limpa a tela. Confirmação inline de 2 cliques, mesmo padrão já
+ * usado em attention-item.tsx pra excluir proposta - não um window.confirm() nativo,
+ * que destoaria do resto da UI.
+ */
+function NewConversationButton({ onConfirm }: { onConfirm: () => Promise<void> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+
+  async function handleConfirm() {
+    setIsStarting(true);
+    try {
+      await onConfirm();
+      toast.success("Nova conversa iniciada — a anterior continua guardada.");
+    } finally {
+      setIsStarting(false);
+      setConfirming(false);
+    }
+  }
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground">Começar do zero?</span>
+        <button
+          type="button"
+          disabled={isStarting}
+          onClick={() => setConfirming(false)}
+          aria-label="Cancelar"
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+        >
+          <X className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          disabled={isStarting}
+          onClick={handleConfirm}
+          aria-label="Confirmar nova conversa"
+          className="flex size-6 items-center justify-center rounded-md text-primary hover:bg-primary/10"
+        >
+          <Check className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      aria-label="Nova conversa"
+      title="Nova conversa"
+      className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <RotateCcw className="size-3.5" />
+    </button>
+  );
+}
+
 function JamileAvatar({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <div
@@ -274,17 +334,24 @@ function JamileAvatar({ size = "md" }: { size?: "sm" | "md" }) {
 export function ChatPanel({
   initialMessages,
   onClose,
+  onStartNewConversation,
   className,
   autoSend,
+  autoSendContextProposalId,
   onAutoSent,
 }: {
   initialMessages: ChatMessageView[];
   onClose?: () => void;
+  /** Arquiva a thread atual e comeca uma em branco - ver NewConversationButton. */
+  onStartNewConversation?: () => Promise<void>;
   className?: string;
   /** Mensagem pra enviar automaticamente quando definida/mudar - usado quando o chat
    * abre focado num assunto (ex: clicar numa notificacao de proposta). Ver
    * jamile-launcher.tsx openChat({ prefill }). */
   autoSend?: string | null;
+  /** Id da proposta que autoSend e "sobre" - vai pro backend pelo canal estrutural
+   * (nunca aparece no texto da bolha). So se aplica a ESSE envio automatico. */
+  autoSendContextProposalId?: string;
   onAutoSent?: () => void;
 }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -298,12 +365,12 @@ export function ChatPanel({
 
   useEffect(() => {
     if (!autoSend) return;
-    sendMessage(autoSend);
+    sendMessage(autoSend, autoSendContextProposalId);
     onAutoSent?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSend]);
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, contextProposalId?: string) {
     if (!content || isSending) return;
 
     setInput("");
@@ -312,7 +379,7 @@ export function ChatPanel({
       const response = await fetch(`/api/chat/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, contextProposalId }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -341,6 +408,7 @@ export function ChatPanel({
             <span className={cn("size-1.5 rounded-full", isSending ? "bg-warning animate-pulse" : "bg-success")} />
             {isSending ? "Analisando..." : "Disponível"}
           </div>
+          {onStartNewConversation ? <NewConversationButton onConfirm={onStartNewConversation} /> : null}
           {onClose ? (
             <button
               type="button"

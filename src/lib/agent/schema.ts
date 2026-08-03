@@ -177,6 +177,24 @@ export const listCustomAudiencesArgsSchema = z.object({});
 
 export type ListCustomAudiencesArgs = z.infer<typeof listCustomAudiencesArgsSchema>;
 
+const proposalStatusSchema = z.enum([
+  "NEEDS_MORE_DATA",
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "TEST",
+  "ADJUST",
+  "EXECUTED",
+  "EXECUTION_FAILED",
+]);
+
+export const listProposalsArgsSchema = z.object({
+  status: proposalStatusSchema.optional(),
+  limit: z.number().int().min(1).max(30).default(15),
+});
+
+export type ListProposalsArgs = z.infer<typeof listProposalsArgsSchema>;
+
 /**
  * Variantes "Chat" dos schemas acima - usadas so pelo chat por usuario
  * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a conta por
@@ -230,6 +248,12 @@ export const searchPublicAdLibraryChatArgsSchema = searchPublicAdLibraryArgsSche
 });
 
 export type SearchPublicAdLibraryChatArgs = z.infer<typeof searchPublicAdLibraryChatArgsSchema>;
+
+export const listProposalsChatArgsSchema = listProposalsArgsSchema.extend({
+  accountId: z.string(),
+});
+
+export type ListProposalsChatArgs = z.infer<typeof listProposalsChatArgsSchema>;
 
 export const listCustomAudiencesChatArgsSchema = z.object({
   accountId: z.string(),

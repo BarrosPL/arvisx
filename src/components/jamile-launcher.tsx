@@ -9,8 +9,11 @@ interface JamileChatContextValue {
   open: boolean;
   /** `prefill` envia essa mensagem automaticamente assim que a conversa abrir/estiver
    * carregada - usado por notificacoes (ex: clicar numa proposta pendente) pra abrir
-   * o chat ja focado no assunto, em vez de navegar pra uma pagina. */
-  openChat: (options?: { prefill?: string }) => void;
+   * o chat ja focado no assunto, em vez de navegar pra uma pagina. `contextProposalId`
+   * (opcional) leva o id da proposta pelo canal estrutural, sem aparecer no texto que
+   * o usuario "fala" - ver orchestrator.ts (runAgentTurn) pra como isso vira contexto
+   * pra JAMILE sem virar um id cru na bolha de mensagem. */
+  openChat: (options?: { prefill?: string; contextProposalId?: string }) => void;
   closeChat: () => void;
   toggleChat: () => void;
 }
@@ -36,7 +39,14 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
+  // ChatPanel guarda "messages" em estado PROPRIO (useState(initialMessages) - so le a
+  // prop na primeira montagem, nunca resincroniza sozinho se ela mudar depois). Usar o
+  // id da thread como "key" forca o React a remontar o ChatPanel do zero quando a
+  // thread ativa troca (nova conversa) - a forma mais simples de garantir que a tela
+  // realmente limpa, sem duplicar o estado de mensagens em dois componentes.
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [pendingPrefill, setPendingPrefill] = useState<string | null>(null);
+  const [pendingContextProposalId, setPendingContextProposalId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -46,6 +56,7 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
       .then((body) => {
         if (cancelled) return;
         setMessages(body.messages ?? []);
+        setThreadId(body.thread?.id ?? null);
         setLoaded(true);
       });
     return () => {
@@ -53,12 +64,22 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
     };
   }, [open, loaded]);
 
-  const openChat = (options?: { prefill?: string }) => {
+  const openChat = (options?: { prefill?: string; contextProposalId?: string }) => {
     setOpen(true);
     if (options?.prefill) setPendingPrefill(options.prefill);
+    if (options?.contextProposalId) setPendingContextProposalId(options.contextProposalId);
   };
   const closeChat = () => setOpen(false);
   const toggleChat = () => setOpen((v) => !v);
+
+  /** "Nova conversa" - arquiva a thread atual no servidor (nunca apaga, ver
+   * startNewUserThread em orchestrator.ts) e limpa a tela local pra refletir isso. */
+  async function startNewConversation() {
+    const response = await fetch("/api/chat", { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    setMessages(body.messages ?? []);
+    setThreadId(body.thread?.id ?? null);
+  }
 
   return (
     <JamileChatContext.Provider value={{ open, openChat, closeChat, toggleChat }}>
@@ -91,11 +112,17 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
             </div>
           ) : (
             <ChatPanel
+              key={threadId}
               initialMessages={messages}
               onClose={closeChat}
+              onStartNewConversation={startNewConversation}
               className="border-0 shadow-none"
               autoSend={pendingPrefill}
-              onAutoSent={() => setPendingPrefill(null)}
+              autoSendContextProposalId={pendingContextProposalId}
+              onAutoSent={() => {
+                setPendingPrefill(null);
+                setPendingContextProposalId(undefined);
+              }}
             />
           )}
         </div>

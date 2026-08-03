@@ -99,7 +99,7 @@ export function AttentionItem({
         type="button"
         onClick={() => {
           onClick?.();
-          openChat({ prefill });
+          openChat({ prefill, contextProposalId: proposalId });
         }}
         className="flex min-w-0 flex-1 items-start gap-3 rounded-lg border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:border-foreground/20"
       >
