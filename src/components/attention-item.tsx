@@ -34,6 +34,7 @@ export function AttentionItem({
   description,
   prefill,
   proposalId,
+  needsCreativeAsset,
   onClick,
 }: {
   tone: StatusTone;
@@ -41,6 +42,9 @@ export function AttentionItem({
   description?: string;
   prefill: string;
   proposalId?: string;
+  /** NEW_CAMPAIGN (Meta) parada so por falta do criativo - mostra o uploader inline
+   * assim que o chat abrir, sem depender de tool call (ver AttentionEntry). */
+  needsCreativeAsset?: boolean;
   /** Chamado junto do clique, antes de abrir o chat - ex: fechar um popover que contém este item. */
   onClick?: () => void;
 }) {
@@ -99,7 +103,7 @@ export function AttentionItem({
         type="button"
         onClick={() => {
           onClick?.();
-          openChat({ prefill, contextProposalId: proposalId });
+          openChat({ prefill, contextProposalId: proposalId, needsCreativeAsset });
         }}
         className="flex min-w-0 flex-1 items-start gap-3 rounded-lg border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:border-foreground/20"
       >

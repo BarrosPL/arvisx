@@ -13,6 +13,12 @@ export interface AttentionEntry {
   /** Presente só quando a entrada é uma proposta de verdade (não erro de rodada nem
    * veredito de marca) - usado pelo botão de excluir direto do sino. */
   proposalId?: string;
+  /** true só quando a entrada é uma NEW_CAMPAIGN (Meta) parada exatamente por falta do
+   * criativo - deixa o chat mostrar o uploader inline (imagem/vídeo) direto ao abrir,
+   * sem depender de nenhuma tool call ter acontecido no turno (o contexto estrutural
+   * injetado em runAgentTurn pode fazer a JAMILE responder sem nunca chamar
+   * get_proposal - ver orchestrator.ts). */
+  needsCreativeAsset?: boolean;
 }
 
 function firstRecommendedReason(recommendedActionsJson: unknown): string | undefined {
@@ -79,6 +85,11 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           proposalId: proposal.id,
         });
       } else if (proposal.status === "NEEDS_MORE_DATA") {
+        const needsCreativeAsset =
+          proposal.type === "NEW_CAMPAIGN" &&
+          proposal.platform === "META" &&
+          !proposal.creativeAssetData &&
+          !(proposal.creativeVideoData && proposal.creativeCoverImageData);
         items.push({
           key: `data-${proposal.id}`,
           tone: "warning",
@@ -87,6 +98,7 @@ export async function getAttentionItems(userId: string): Promise<AttentionEntry[
           prefill: `Me explica a proposta "${proposal.title}" que está aguardando dado.`,
           createdAt: proposal.createdAt,
           proposalId: proposal.id,
+          needsCreativeAsset,
         });
       } else {
         items.push({

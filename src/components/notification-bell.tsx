@@ -49,6 +49,7 @@ export function NotificationBell({ items }: { items: AttentionEntry[] }) {
                 description={item.description}
                 prefill={item.prefill}
                 proposalId={item.proposalId}
+                needsCreativeAsset={item.needsCreativeAsset}
                 onClick={() => setOpen(false)}
               />
             ))}

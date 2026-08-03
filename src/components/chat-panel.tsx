@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { MISSING_CREATIVE_ASSET_LABEL } from "@/lib/proposals/dataEnforcement";
 
 type MessageRole = "USER" | "ASSISTANT" | "TOOL" | "SYSTEM";
 
@@ -86,9 +87,9 @@ function toolSummary(message: ChatMessageView): string {
   return label;
 }
 
-/** Proposta NEW_CAMPAIGN (Meta) que acabou de nascer/ser consultada e ainda falta a
- * imagem do anuncio - unico caso onde o chat mostra um uploader inline (ver
- * ChatCreativeAssetUpload abaixo). Cobre propose_action e confirm_and_execute_action
+/** Proposta NEW_CAMPAIGN (Meta) que acabou de nascer/ser consultada e ainda falta o
+ * criativo (imagem OU video+capa) - unico caso onde o chat mostra um uploader inline
+ * (ver ChatCreativeAssetPicker abaixo). Cobre propose_action e confirm_and_execute_action
  * (campo "missing" ja diz isso) e get_proposal (campos "type"/"status"/
  * "hasCreativeAsset" explicitos). */
 function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: string } | null {
@@ -100,7 +101,7 @@ function pendingCreativeAssetProposal(tools: ChatMessageView[]): { proposalId: s
       typeof parsed.proposalId === "string"
     ) {
       const missing = Array.isArray(parsed.missing) ? (parsed.missing as string[]) : [];
-      if (missing.includes("imagem do anúncio")) return { proposalId: parsed.proposalId };
+      if (missing.includes(MISSING_CREATIVE_ASSET_LABEL)) return { proposalId: parsed.proposalId };
     }
     if (
       tool.toolName === "get_proposal" &&
@@ -202,15 +203,14 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * Unico jeito de anexar a imagem de uma proposta NEW_CAMPAIGN (Meta) agora que a
- * decisao nao passa mais pela tela da proposta - a JAMILE nunca gera/promete a
- * imagem, um humano anexa aqui dentro da propria conversa. Reaproveita a mesma rota
+ * Anexa a IMAGEM de uma proposta NEW_CAMPAIGN (Meta) - um dos dois formatos possiveis
+ * (ver ChatCreativeVideoUpload pro outro). A JAMILE nunca gera/promete o criativo, um
+ * humano anexa aqui dentro da propria conversa. Reaproveita a mesma rota
  * POST /api/proposals/[id]/creative-asset ja usada antes em proposal-card.tsx.
  */
-function ChatCreativeAssetUpload({ proposalId }: { proposalId: string }) {
+function ChatCreativeAssetUpload({ proposalId, onDone }: { proposalId: string; onDone: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [done, setDone] = useState(false);
 
   async function handleUpload() {
     if (!file) return;
@@ -228,14 +228,10 @@ function ChatCreativeAssetUpload({ proposalId }: { proposalId: string }) {
         return;
       }
       toast.success("Imagem anexada — proposta liberada para aprovação.");
-      setDone(true);
+      onDone();
     } finally {
       setIsUploading(false);
     }
-  }
-
-  if (done) {
-    return <p className="w-fit rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-xs text-success">Imagem anexada</p>;
   }
 
   return (
@@ -253,6 +249,117 @@ function ChatCreativeAssetUpload({ proposalId }: { proposalId: string }) {
         className="rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
       >
         Anexar
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Anexa VIDEO + capa de uma proposta NEW_CAMPAIGN (Meta) - os dois arquivos juntos,
+ * porque video_data da Meta exige uma URL publica de thumbnail (ver
+ * lib/media/publicAssets.ts) que so existe depois de subir uma imagem de capa junto.
+ * Reaproveita POST /api/proposals/[id]/creative-video-asset.
+ */
+function ChatCreativeVideoUpload({ proposalId, onDone }: { proposalId: string; onDone: () => void }) {
+  const [video, setVideo] = useState<File | null>(null);
+  const [cover, setCover] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  async function handleUpload() {
+    if (!video || !cover) return;
+    setIsUploading(true);
+    try {
+      const [videoBase64, coverImageBase64] = await Promise.all([fileToBase64(video), fileToBase64(cover)]);
+      const response = await fetch(`/api/proposals/${proposalId}/creative-video-asset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoBase64,
+          videoMimeType: video.type,
+          coverImageBase64,
+          coverImageMimeType: cover.type,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(body.error ?? "Falha ao anexar vídeo.");
+        return;
+      }
+      toast.success("Vídeo anexado — proposta liberada para aprovação.");
+      onDone();
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex w-fit flex-col gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 px-2.5 py-2 text-xs">
+      <label className="flex items-center gap-1.5">
+        <span className="w-10 shrink-0 text-muted-foreground">Vídeo</span>
+        <input
+          type="file"
+          accept="video/mp4,video/quicktime"
+          onChange={(event) => setVideo(event.target.files?.[0] ?? null)}
+          className="max-w-36 text-xs file:mr-1.5 file:rounded-full file:border-0 file:bg-foreground file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-background"
+        />
+      </label>
+      <label className="flex items-center gap-1.5">
+        <span className="w-10 shrink-0 text-muted-foreground">Capa</span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png"
+          onChange={(event) => setCover(event.target.files?.[0] ?? null)}
+          className="max-w-36 text-xs file:mr-1.5 file:rounded-full file:border-0 file:bg-foreground file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-background"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={handleUpload}
+        disabled={!video || !cover || isUploading}
+        className="self-end rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+      >
+        Anexar
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Deixa o humano escolher o formato antes de mostrar o uploader certo - o sistema
+ * suporta os dois (ver ChatCreativeAssetUpload/ChatCreativeVideoUpload), nunca escolhe
+ * sozinho por ele.
+ */
+function ChatCreativeAssetPicker({ proposalId }: { proposalId: string }) {
+  const [format, setFormat] = useState<"image" | "video" | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (done) {
+    return (
+      <p className="w-fit rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-xs text-success">
+        Criativo anexado
+      </p>
+    );
+  }
+
+  if (format === "image") return <ChatCreativeAssetUpload proposalId={proposalId} onDone={() => setDone(true)} />;
+  if (format === "video") return <ChatCreativeVideoUpload proposalId={proposalId} onDone={() => setDone(true)} />;
+
+  return (
+    <div className="flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs">
+      <span className="text-muted-foreground">Anexar criativo:</span>
+      <button
+        type="button"
+        onClick={() => setFormat("image")}
+        className="rounded-full border px-2.5 py-1 font-medium transition-colors hover:bg-muted"
+      >
+        Imagem
+      </button>
+      <button
+        type="button"
+        onClick={() => setFormat("video")}
+        className="rounded-full border px-2.5 py-1 font-medium transition-colors hover:bg-muted"
+      >
+        Vídeo
       </button>
     </div>
   );
@@ -338,6 +445,7 @@ export function ChatPanel({
   className,
   autoSend,
   autoSendContextProposalId,
+  autoSendNeedsCreativeAsset,
   onAutoSent,
 }: {
   initialMessages: ChatMessageView[];
@@ -352,11 +460,22 @@ export function ChatPanel({
   /** Id da proposta que autoSend e "sobre" - vai pro backend pelo canal estrutural
    * (nunca aparece no texto da bolha). So se aplica a ESSE envio automatico. */
   autoSendContextProposalId?: string;
+  /** A proposta de autoSendContextProposalId e uma NEW_CAMPAIGN parada so por falta do
+   * criativo - mostra o uploader "fixo" (pinnedCreativeAssetProposalId abaixo) direto,
+   * sem depender de nenhuma tool call ter acontecido no turno (o contexto estrutural
+   * injetado no backend pode fazer a JAMILE responder sem chamar get_proposal). */
+  autoSendNeedsCreativeAsset?: boolean;
   onAutoSent?: () => void;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  // So le as props na montagem (mesmo padrao de useState(initialMessages) acima) - o
+  // valor ja e conhecido de imediato, nao depende do round-trip do autoSend, entao nao
+  // precisa de useEffect nenhum pra isto.
+  const [pinnedCreativeAssetProposalId] = useState<string | null>(
+    autoSendNeedsCreativeAsset && autoSendContextProposalId ? autoSendContextProposalId : null
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -475,7 +594,7 @@ export function ChatPanel({
               <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
                 {item.message.content}
               </div>
-              {pendingAsset ? <ChatCreativeAssetUpload proposalId={pendingAsset.proposalId} /> : null}
+              {pendingAsset ? <ChatCreativeAssetPicker proposalId={pendingAsset.proposalId} /> : null}
               {proposalInfo ? (
                 <Link
                   href="/proposals"
@@ -496,6 +615,13 @@ export function ChatPanel({
         ) : null}
         <div ref={bottomRef} />
       </CardContent>
+
+      {pinnedCreativeAssetProposalId ? (
+        <div className="border-t px-3 py-2">
+          <p className="mb-1.5 text-xs text-muted-foreground">Anexe o criativo desta proposta:</p>
+          <ChatCreativeAssetPicker proposalId={pinnedCreativeAssetProposalId} />
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1.5 border-t p-3">
         <div className="flex gap-2">

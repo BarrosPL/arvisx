@@ -13,7 +13,7 @@ interface JamileChatContextValue {
    * (opcional) leva o id da proposta pelo canal estrutural, sem aparecer no texto que
    * o usuario "fala" - ver orchestrator.ts (runAgentTurn) pra como isso vira contexto
    * pra JAMILE sem virar um id cru na bolha de mensagem. */
-  openChat: (options?: { prefill?: string; contextProposalId?: string }) => void;
+  openChat: (options?: { prefill?: string; contextProposalId?: string; needsCreativeAsset?: boolean }) => void;
   closeChat: () => void;
   toggleChat: () => void;
 }
@@ -47,6 +47,7 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [pendingPrefill, setPendingPrefill] = useState<string | null>(null);
   const [pendingContextProposalId, setPendingContextProposalId] = useState<string | undefined>(undefined);
+  const [pendingNeedsCreativeAsset, setPendingNeedsCreativeAsset] = useState(false);
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -64,10 +65,11 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
     };
   }, [open, loaded]);
 
-  const openChat = (options?: { prefill?: string; contextProposalId?: string }) => {
+  const openChat = (options?: { prefill?: string; contextProposalId?: string; needsCreativeAsset?: boolean }) => {
     setOpen(true);
     if (options?.prefill) setPendingPrefill(options.prefill);
     if (options?.contextProposalId) setPendingContextProposalId(options.contextProposalId);
+    if (options?.needsCreativeAsset) setPendingNeedsCreativeAsset(true);
   };
   const closeChat = () => setOpen(false);
   const toggleChat = () => setOpen((v) => !v);
@@ -119,9 +121,11 @@ export function JamileProvider({ children }: { children: React.ReactNode }) {
               className="border-0 shadow-none"
               autoSend={pendingPrefill}
               autoSendContextProposalId={pendingContextProposalId}
+              autoSendNeedsCreativeAsset={pendingNeedsCreativeAsset}
               onAutoSent={() => {
                 setPendingPrefill(null);
                 setPendingContextProposalId(undefined);
+                setPendingNeedsCreativeAsset(false);
               }}
             />
           )}

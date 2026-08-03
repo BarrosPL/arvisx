@@ -22,6 +22,14 @@ export interface ProposalReadinessResult {
 
 const FINANCIAL_METRIC_FIELDS = ["spend", "ctr", "cpc", "cpl", "cpa", "conversions"];
 
+/** Exportado (nao so um literal inline) porque chat-panel.tsx compara contra este texto
+ * exato pra decidir se mostra o uploader inline - um so tinha mudado antes (o texto
+ * aqui virou "imagem ou vídeo" quando o caminho de video foi adicionado, mas o
+ * chat-panel.tsx continuou comparando com a string antiga "imagem do anúncio", que
+ * nunca mais dava match - o uploader parou de aparecer pra qualquer proposta). Import
+ * direto elimina essa classe de bug de vez. */
+export const MISSING_CREATIVE_ASSET_LABEL = "imagem ou vídeo do anúncio";
+
 /** Tipos que agem sobre uma campanha/anuncio que ja existe na plataforma. */
 const EXISTING_CAMPAIGN_ACTIONS = new Set<ProposalTypeInput>([
   "PAUSE_AD",
@@ -60,7 +68,7 @@ export function evaluateProposalReadiness(input: ProposalReadinessInput): Propos
   if (input.type === "NEW_CAMPAIGN") {
     return input.platform === "GOOGLE"
       ? { ready: true, missing: [] }
-      : { ready: false, missing: ["imagem ou vídeo do anúncio"] };
+      : { ready: false, missing: [MISSING_CREATIVE_ASSET_LABEL] };
   }
 
   if (!EXISTING_CAMPAIGN_ACTIONS.has(input.type)) {

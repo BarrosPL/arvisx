@@ -28,7 +28,12 @@ export async function getProposal(credentialId: string, proposalId: string) {
     platformAdId: proposal.platformAdId,
     metricsJson: proposal.metricsJson,
     campaignPlan: proposal.type === "NEW_CAMPAIGN" ? (payload?.campaignPlan ?? null) : undefined,
-    hasCreativeAsset: proposal.type === "NEW_CAMPAIGN" ? proposal.creativeAssetData !== null : undefined,
+    // Duas fontes possiveis de criativo - imagem OU video+capa, nunca as duas na mesma
+    // proposta (ver schema.prisma). Contam como "ja tem criativo" as duas.
+    hasCreativeAsset:
+      proposal.type === "NEW_CAMPAIGN"
+        ? proposal.creativeAssetData !== null || (proposal.creativeVideoData !== null && proposal.creativeCoverImageData !== null)
+        : undefined,
     decisionNote: proposal.decisionNote,
     createdAt: proposal.createdAt,
   };
