@@ -737,10 +737,12 @@ async function dispatchExecution(proposal: Proposal): Promise<DispatchResult> {
     // Publicos de ENGAJAMENTO COM A PAGINA - proxy disponivel hoje, nao o mecanismo
     // ideal da spec. Duas limitacoes reais, documentadas aqui pra quem for revisar os
     // numeros depois nao achar que e precisao que nao existe:
-    // 1. Nao ha audience por VIDEO especifico (o formato do `rule` pra isso nao foi
-    //    confirmado na doc oficial - ver nota no topo de metaAudiences.ts) - entao
-    //    Morno/Quente nao distinguem QUAL video/gancho a pessoa viu, so que ela
-    //    interagiu com a Pagina de algum jeito.
+    // 1. Nao ha audience por VIDEO especifico - decisao confirmada com o Renan em
+    //    2026-08-04 depois de duas investigacoes reais esgotadas (doc oficial +
+    //    leitura de volta de um publico de video criado manualmente no Gerenciador,
+    //    que veio com `rule` vazio - o dado nem e exposto pela API publica pra esse
+    //    caso, ver nota no topo de metaAudiences.ts). Morno/Quente nao distinguem QUAL
+    //    video/gancho a pessoa viu, so que ela interagiu com a Pagina de algum jeito.
     // 2. Sem Pixel/Conversions API em lugar nenhum do sistema, nao ha como saber quem
     //    CONVERTEU - Remarketing (retina quem viu e nao converteu) e Lookalike
     //    (semeado por quem comprou) viram aproximacoes por engajamento, nao pelo sinal

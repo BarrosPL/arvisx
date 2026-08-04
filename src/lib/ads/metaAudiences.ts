@@ -13,18 +13,27 @@ const GRAPH_API_VERSION = "v21.0";
  *   Shopping/AR, com inclusao E exclusao na mesma regra (createMetaEngagementAudience)
  * - listar, ler e apagar
  *
- * O QUE FALTA DE PROPOSITO: audience de engajamento por VIDEO ESPECIFICO (o mecanismo
- * exato que moveria lead de "viu o video do frio" pra "morno" automaticamente, com
- * granularidade por criativo e percentual assistido). A doc oficial confirma que "video"
- * e uma fonte de evento separada (existe no produto, Gerenciador de Anuncios oferece
- * "Video" como opcao de Engajamento), mas a pagina de referencia consultada ate agora
- * ("Engagement Custom Audiences") so documenta em detalhe Page/Lead/IG/Canvas/Shopping/AR
- * - video e so citado de passagem, sem o `type` de event_source nem o vocabulario de
- * filtro (percentual assistido). Nao adivinhei esse formato pra nao arriscar criar um
- * publico malformado (ou pior: o Meta aceitar e o publico nunca popular ninguem, que
- * falha em silencio). Ate isso ser confirmado, PAGE_ENGAGEMENT_EVENTS.ENGAGED e o proxy
- * mais proximo disponivel pra "Frio" (quem interagiu com a marca, nao especificamente
- * com o video do gancho X).
+ * NAO IMPLEMENTADO, e nao por falta de tentativa: audience de engajamento por VIDEO
+ * ESPECIFICO (o mecanismo que moveria lead de "viu o video do frio" pra "morno"
+ * automaticamente, com granularidade por criativo e percentual assistido). Duas
+ * investigacoes reais, as duas esgotadas em 2026-08-04:
+ * 1. Doc oficial: a pagina de referencia consultada ("Engagement Custom Audiences") so
+ *    documenta em detalhe Page/Lead/IG/Canvas/Shopping/AR - video e so citado de
+ *    passagem, sem o `type` de event_source nem o vocabulario de filtro.
+ * 2. Leitura de volta: o Renan criou manualmente um publico de video (Engajamento ->
+ *    Video -> 50% assistido) no Gerenciador de Anuncios e eu li ele de volta via API
+ *    (GET .../{id}?fields=rule,data_source). O campo `rule` veio LITERALMENTE VAZIO
+ *    ("[]") - so `data_source.creation_params` aparece, e so tem {"prefill":"true"},
+ *    sem nenhuma referencia ao video ou ao percentual escolhido na tela. Ou seja: o
+ *    Gerenciador cria esse tipo de publico por um mecanismo interno que a API publica
+ *    de Custom Audiences nao expoe do mesmo jeito que expoe Pagina/Lead/Instagram -
+ *    nao e so falta de doc, o dado nem aparece pra quem le de volta.
+ *
+ * Decisao com o Renan (2026-08-04): parar de cacar isso por agora, nao adivinhar o
+ * formato (arriscaria criar publico malformado, ou pior, aceito mas que nunca populam
+ * ninguem - falha em silencio). PAGE_ENGAGEMENT_EVENTS.ENGAGED continua sendo o proxy
+ * usado pra "Frio"/"Morno" em todo lugar que precisaria de video (ver NEW_FUNNEL em
+ * lib/execution/executor.ts) - permanente por ora, nao mais "temporario ate confirmar".
  */
 
 interface MetaApiErrorResponse {
