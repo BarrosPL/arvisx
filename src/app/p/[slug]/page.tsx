@@ -11,12 +11,10 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-// SEM generateStaticParams de proposito: rodaria em BUILD TIME, e o container de build
-// do EasyPanel nao tem acesso de rede ao Postgres (so o container que roda depois tem -
-// erro real visto em producao: "getaddrinfo EAI_AGAIN n8n_postgres"). dynamicParams
-// (default true) ja cobre isso: a primeira visita a cada slug renderiza on-demand, e o
-// `revalidate` acima cacheia dali em diante - mesmo resultado pratico do ISR, sem
-// depender do banco durante o build.
+export async function generateStaticParams() {
+  const bioPages = await prisma.bioPage.findMany({ where: { isPublished: true }, select: { slug: true } });
+  return bioPages.map((bioPage) => ({ slug: bioPage.slug }));
+}
 
 async function getPublishedBioPage(slug: string) {
   const bioPage = await prisma.bioPage.findUnique({
