@@ -188,11 +188,11 @@ export const getCampaignsArgsSchema = z.object({
 
 export type GetCampaignsArgs = z.infer<typeof getCampaignsArgsSchema>;
 
-export const researchStubArgsSchema = z.object({
+export const researchQueryArgsSchema = z.object({
   query: z.string().min(1),
 });
 
-export type ResearchStubArgs = z.infer<typeof researchStubArgsSchema>;
+export type ResearchQueryArgs = z.infer<typeof researchQueryArgsSchema>;
 
 export const getMetricsHistoryArgsSchema = z.object({
   platformAdId: z.string().min(1),
@@ -263,6 +263,17 @@ export type GetHistoricalPerformanceArgs = z.infer<typeof getHistoricalPerforman
 
 export type ListProposalsArgs = z.infer<typeof listProposalsArgsSchema>;
 
+/** Filtros opcionais por texto livre (mesmo enquadramento aberto de productName/hook
+ * usado no cadastro - ver CreativeLibraryAsset no schema.prisma) - "contains" sem
+ * distincao de maiusculas, pra JAMILE conseguir perguntar "temos criativo pra X?" sem
+ * precisar do texto exato cadastrado. */
+export const getCreativeLibraryArgsSchema = z.object({
+  productName: z.string().optional().describe("Filtra por produto (contains, sem distincao de maiusculas)."),
+  hook: z.string().optional().describe("Filtra por gancho/persona (contains, sem distincao de maiusculas)."),
+});
+
+export type GetCreativeLibraryArgs = z.infer<typeof getCreativeLibraryArgsSchema>;
+
 /**
  * Variantes "Chat" dos schemas acima - usadas so pelo chat por usuario
  * (lib/agent/tools/index.ts, dispatchChatTool), onde o modelo escolhe a conta por
@@ -322,6 +333,12 @@ export const listProposalsChatArgsSchema = listProposalsArgsSchema.extend({
 });
 
 export type ListProposalsChatArgs = z.infer<typeof listProposalsChatArgsSchema>;
+
+export const getCreativeLibraryChatArgsSchema = getCreativeLibraryArgsSchema.extend({
+  accountId: z.string(),
+});
+
+export type GetCreativeLibraryChatArgs = z.infer<typeof getCreativeLibraryChatArgsSchema>;
 
 export const getHistoricalPerformanceChatArgsSchema = getHistoricalPerformanceArgsSchema.extend({
   accountId: z.string(),

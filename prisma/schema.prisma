@@ -149,10 +149,11 @@ model User {
   updatedAt          DateTime   @updatedAt
 
   threads             ConversationThread[]
-  decidedProposals    Proposal[]           @relation("ProposalDecidedBy")
-  createdProposals    Proposal[]           @relation("ProposalCreatedBy")
-  executions          ExecutionLog[]       @relation("ExecutedBy")
+  decidedProposals    Proposal[]             @relation("ProposalDecidedBy")
+  createdProposals    Proposal[]             @relation("ProposalCreatedBy")
+  executions          ExecutionLog[]         @relation("ExecutedBy")
   providerConnections ProviderConnection[]
+  creativeLibraryAssets CreativeLibraryAsset[] @relation("CreativeLibraryAssetCreatedBy")
 
   @@schema("arvisx")
 }
@@ -221,6 +222,7 @@ model AdCredential {
   executionLogs           ExecutionLog[]
   abTests                 AbTest[]
   schedulerResults        SchedulerAccountResult[]
+  creativeLibraryAssets   CreativeLibraryAsset[]
 
   @@unique([platform, externalAccountId])
   @@schema("arvisx")
@@ -540,6 +542,46 @@ model ProposalFunnelLayer {
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@unique([proposalId, layerKey])
+  @@schema("arvisx")
+}
+
+/**
+ * Banco de criativos por produto/gancho (spec-gestor-trafego-ia.md secao 3) - so
+ * CATALOGO por enquanto (decisao do Renan em 2026-08-04): registra o que ja existe pra
+ * cada combinacao produto+gancho, pra JAMILE apontar lacunas ("falta um criativo Quente
+ * pro gancho bisneto") - NAO se conecta ao upload de criativo de NEW_CAMPAIGN/NEW_FUNNEL
+ * (reaproveitar um item daqui numa proposta nova fica pra uma iteracao futura, se
+ * decidido). productName/hook sao texto livre de proposito, espelhando o mesmo
+ * enquadramento aberto que o spec usa (nao ha model Product persistido no sistema).
+ * funnelStage e OPCIONAL porque nem todo criativo catalogado precisa ja estar
+ * classificado por temperatura - reaproveita FunnelLayerKey (mesmo enum de
+ * ProposalFunnelLayer) em vez de criar um enum novo so com FRIO/MORNO/QUENTE.
+ * Mesmo padrao imagem-OU-video de 6 campos ja usado em Proposal/ProposalFunnelLayer.
+ */
+model CreativeLibraryAsset {
+  id           String          @id @default(cuid())
+  credentialId String
+  productName  String
+  hook         String
+  funnelStage  FunnelLayerKey?
+  label        String
+  notes        String?         @db.Text
+
+  creativeAssetData          Bytes?
+  creativeAssetMimeType      String?
+  creativeVideoData          Bytes?
+  creativeVideoMimeType      String?
+  creativeCoverImageData     Bytes?
+  creativeCoverImageMimeType String?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  createdBy  User?        @relation("CreativeLibraryAssetCreatedBy", fields: [createdByUserId], references: [id])
+
+  @@index([credentialId, productName])
   @@schema("arvisx")
 }
 

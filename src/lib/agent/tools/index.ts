@@ -11,7 +11,8 @@ import {
   listCustomAudiencesArgsSchema,
   listProposalsArgsSchema,
   getHistoricalPerformanceArgsSchema,
-  researchStubArgsSchema,
+  getCreativeLibraryArgsSchema,
+  researchQueryArgsSchema,
   getRankingChatArgsSchema,
   getMetricsChatArgsSchema,
   getMetricsHistoryChatArgsSchema,
@@ -23,6 +24,7 @@ import {
   listCustomAudiencesChatArgsSchema,
   listProposalsChatArgsSchema,
   getHistoricalPerformanceChatArgsSchema,
+  getCreativeLibraryChatArgsSchema,
   proposalPayloadChatSchema,
   getProposalChatArgsSchema,
   resolveProposalChatArgsSchema,
@@ -41,8 +43,9 @@ import { searchPublicAdLibrary } from "./searchPublicAdLibrary";
 import { listCustomAudiences } from "./listCustomAudiences";
 import { listProposals } from "./listProposals";
 import { getHistoricalPerformance } from "./getHistoricalPerformance";
+import { getCreativeLibrary } from "./getCreativeLibrary";
 import { proposeAction } from "./proposeAction";
-import { researchStub } from "./researchStub";
+import { researchMarket, scanCompetitors } from "./research";
 import { getProposal } from "./getProposal";
 import { adjustProposalAsUser } from "@/lib/proposals/decide";
 import { confirmAndExecuteAction, resolveProposal } from "@/lib/proposals/chatActions";
@@ -400,6 +403,22 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_creative_library",
+      description:
+        "Le o banco de criativos catalogados por produto e gancho/persona (spec secao 3) - so cadastro/organizacao, NAO reaproveita o arquivo numa proposta nova. Use antes de propor uma campanha nova pra um produto/gancho pra ver o que ja existe e apontar lacunas de cobertura Fria/Morna/Quente (ex: 'ja temos video pro gancho neto, mas nada Quente pro bisneto ainda').",
+      parameters: {
+        type: "object",
+        properties: {
+          productName: { type: "string", description: "Filtra por produto (contains, sem distincao de maiusculas)." },
+          hook: { type: "string", description: "Filtra por gancho/persona (contains, sem distincao de maiusculas)." },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "propose_action",
       description:
         "Cria uma proposta de acao pendente de aprovacao humana. Esta e a UNICA acao que voce pode tomar - nunca executa nada de fato.",
@@ -415,7 +434,8 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "research_market",
-      description: "Pesquisa de mercado. Nesta versao nao ha fonte de dado ao vivo configurada - retorna isso explicitamente.",
+      description:
+        "Busca na web ao vivo (Tavily, topico 'noticias', ultima semana) por ganchos virais/noticias recentes sobre um tema - spec secao 4.2, item obrigatorio antes de propor campanha nova pra um produto. Se TAVILY_API_KEY nao estiver configurada, devolve isso explicitamente (ok:false) em vez de inventar resultado.",
       parameters: {
         type: "object",
         properties: { query: { type: "string" } },
@@ -428,7 +448,8 @@ export const TOOL_DEFS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "scan_competitors",
-      description: "Pesquisa de concorrencia. Nesta versao nao ha fonte de dado ao vivo configurada - retorna isso explicitamente.",
+      description:
+        "Busca geral na web (Tavily) sobre um concorrente especifico (site, imprensa, blog) - complementa search_public_ad_library, que so cobre o que o concorrente publica na Meta Ad Library. Se TAVILY_API_KEY nao estiver configurada, devolve isso explicitamente (ok:false) em vez de inventar resultado.",
       parameters: {
         type: "object",
         properties: { query: { type: "string" } },
@@ -468,11 +489,14 @@ export async function dispatchTool(name: string, rawArgs: string, ctx: ToolConte
         return await listProposals(ctx.accountId, listProposalsArgsSchema.parse(parsedJson));
       case "get_historical_performance":
         return await getHistoricalPerformance(ctx.accountId, getHistoricalPerformanceArgsSchema.parse(parsedJson));
+      case "get_creative_library":
+        return await getCreativeLibrary(ctx.accountId, getCreativeLibraryArgsSchema.parse(parsedJson));
       case "propose_action":
         return await proposeAction({ credentialId: ctx.accountId, threadId: ctx.threadId }, proposalPayloadSchema.parse(parsedJson));
       case "research_market":
+        return await researchMarket(researchQueryArgsSchema.parse(parsedJson));
       case "scan_competitors":
-        return await researchStub(researchStubArgsSchema.parse(parsedJson));
+        return await scanCompetitors(researchQueryArgsSchema.parse(parsedJson));
       default:
         return { error: `Tool desconhecida: ${name}` };
     }
@@ -500,6 +524,7 @@ const ACCOUNT_SCOPED_TOOL_NAMES = new Set([
   "list_custom_audiences",
   "list_proposals",
   "get_historical_performance",
+  "get_creative_library",
   "propose_action",
 ]);
 
@@ -733,6 +758,11 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         assertAccountAccess(ctx, args.accountId);
         return await getHistoricalPerformance(args.accountId, args);
       }
+      case "get_creative_library": {
+        const args = getCreativeLibraryChatArgsSchema.parse(parsedJson);
+        assertAccountAccess(ctx, args.accountId);
+        return await getCreativeLibrary(args.accountId, args);
+      }
       case "propose_action": {
         const args = proposalPayloadChatSchema.parse(parsedJson);
         assertAccountAccess(ctx, args.accountId);
@@ -779,8 +809,9 @@ export async function dispatchChatTool(name: string, rawArgs: string, ctx: ChatT
         return { proposalId: args.proposalId, deleted: true };
       }
       case "research_market":
+        return await researchMarket(researchQueryArgsSchema.parse(parsedJson));
       case "scan_competitors":
-        return await researchStub(researchStubArgsSchema.parse(parsedJson));
+        return await scanCompetitors(researchQueryArgsSchema.parse(parsedJson));
       default:
         return { error: `Tool desconhecida: ${name}` };
     }
