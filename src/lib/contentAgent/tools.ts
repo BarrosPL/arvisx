@@ -10,10 +10,14 @@ export const CONTENT_TOOL_DEFS: ChatCompletionTool[] = [
     function: {
       name: "generate_content",
       description:
-        "Gera uma peça de conteúdo (imagem) para redes sociais a partir de um pedido em linguagem natural, seguindo o Brand Kit ativo do usuário. A imagem gerada já aparece automaticamente pro usuário na conversa - não descreva a imagem em detalhe nem repita um link, só confirme brevemente o que foi feito.",
+        "Gera uma peça de conteúdo (imagem) para redes sociais a partir de um pedido em linguagem natural, seguindo o Brand Kit da marca indicada. A imagem gerada já aparece automaticamente pro usuário na conversa - não descreva a imagem em detalhe nem repita um link, só confirme brevemente o que foi feito.",
       parameters: {
         type: "object",
         properties: {
+          brandId: {
+            type: "string",
+            description: "Id exato de uma das marcas ativas do usuário (do roster no prompt de sistema) - nunca invente ou adivinhe um id.",
+          },
           brief: {
             type: "string",
             description: "O pedido do usuário, resumido/limpo se necessário (o assunto/tema da peça a gerar).",
@@ -25,7 +29,7 @@ export const CONTENT_TOOL_DEFS: ChatCompletionTool[] = [
               "Formato da peça. 'ig_feed_square' (padrão pra pedido genérico de post), 'ig_feed_portrait' (feed vertical/retrato) ou 'ig_story' (stories).",
           },
         },
-        required: ["brief", "formatId"],
+        required: ["brandId", "brief", "formatId"],
         additionalProperties: false,
       },
     },
@@ -54,6 +58,10 @@ export const CONTENT_TOOL_DEFS: ChatCompletionTool[] = [
 export interface ContentToolContext {
   userId: string;
   threadId: string;
+  /** Marcas que o usuário da thread realmente possui (via listUserBrands) - portão
+   * duro: nenhuma geração roda pra uma marca fora desse conjunto, não importa o que o
+   * modelo tenha "decidido". Mesmo padrão de allowedAccountIds da JAMILE. */
+  allowedBrandIds: Set<string>;
 }
 
 /** Nunca deixa a tool call derrubar o turno inteiro (BrandNotConfiguredError/
@@ -74,9 +82,14 @@ async function dispatchGenerate(argsJson: string, ctx: ContentToolContext): Prom
     return { ok: false, error: "Argumentos inválidos pra generate_content." };
   }
 
+  if (!ctx.allowedBrandIds.has(args.brandId)) {
+    return { ok: false, error: "Você não tem acesso a essa marca." };
+  }
+
   try {
     const content = await generateContent({
       userId: ctx.userId,
+      brandId: args.brandId,
       brief: args.brief,
       formatId: args.formatId,
       threadId: ctx.threadId,

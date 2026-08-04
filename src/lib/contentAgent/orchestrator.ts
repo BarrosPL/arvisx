@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { prisma } from "@/lib/prisma";
 import { openai, AGENT_MODEL } from "@/lib/openai";
-import { getUserBrand } from "@/lib/content/access";
+import { listUserBrands } from "@/lib/content/access";
 import { buildContentSystemPrompt } from "./persona";
 import { CONTENT_TOOL_DEFS, dispatchContentTool } from "./tools";
 import type { ContentMessage, ContentMessageRole } from "@/generated/prisma/client";
@@ -40,7 +40,8 @@ export async function runContentAgentTurn(threadId: string, userText: string): P
     data: { threadId, role: "USER", content: userText },
   });
 
-  const brand = await getUserBrand(thread.userId);
+  const brands = await listUserBrands(thread.userId);
+  const allowedBrandIds = new Set(brands.map((brand) => brand.id));
 
   const history = await prisma.contentMessage.findMany({
     where: { threadId, role: { in: ["USER", "ASSISTANT"] } },
@@ -55,7 +56,7 @@ export async function runContentAgentTurn(threadId: string, userText: string): P
   // "o quê" revisar e só ocuparia espaço à toa.
   const hasExistingPiece = history.some((message) => message.contentId);
   const openaiMessages: ChatCompletionMessageParam[] = [
-    { role: "system", content: buildContentSystemPrompt(brand) },
+    { role: "system", content: buildContentSystemPrompt(brands) },
     ...mapHistoryToOpenAi(history),
     ...(hasExistingPiece
       ? [
@@ -69,7 +70,7 @@ export async function runContentAgentTurn(threadId: string, userText: string): P
   ];
 
   const toolMessages: ContentMessage[] = [];
-  const ctx = { userId: thread.userId, threadId };
+  const ctx = { userId: thread.userId, threadId, allowedBrandIds };
   let finalText: string | null = null;
   let generatedContentId: string | null = null;
 

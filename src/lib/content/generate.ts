@@ -1,13 +1,26 @@
 import { zodResponseFormat } from "openai/helpers/zod";
 import { openai, AGENT_MODEL } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
-import type { Brand, Content } from "@/generated/prisma/client";
-import { getUserBrand } from "./access";
+import type { Brand, BrandGoal, Content } from "@/generated/prisma/client";
+import { assertBrandAccess } from "./access";
 import { findComplianceViolations } from "./compliance";
 import { generationOutputSchema, type GenerationOutput } from "./schema";
 import { resolveScene } from "./render/resolveScene";
 import type { SlotConstraints } from "./render/autoFit";
 import { renderScene } from "./render/renderScene";
+
+/** Como o "Objetivo" da marca (passo do wizard, pedido do Renan) calibra tom/CTA -
+ * um parágrafo curto por valor, injetado no prompt só quando a marca declarou um. */
+const GOAL_GUIDANCE: Record<BrandGoal, string> = {
+  VENDER:
+    "Objetivo desta marca: VENDER mais produtos/serviços - CTA deve empurrar pra uma ação de conversão direta (comprar, contratar, agendar), foco no benefício concreto.",
+  CONSTRUIR_AUTORIDADE:
+    "Objetivo desta marca: CONSTRUIR AUTORIDADE - tom educativo, compartilhando conhecimento real, sem soar vendedor; CTA pode ser mais suave (seguir, saber mais) em vez de venda direta.",
+  AUMENTAR_ENGAJAMENTO:
+    "Objetivo desta marca: AUMENTAR ENGAJAMENTO - inclua uma pergunta ou convite à interação (comentar, compartilhar, marcar alguém) em vez de só informar.",
+  GERAR_LEADS:
+    "Objetivo desta marca: GERAR LEADS QUALIFICADOS - CTA deve pedir um contato/cadastro (ex: 'fale com a gente', 'agende uma avaliação'), não uma venda fechada direto.",
+};
 
 export class BrandNotConfiguredError extends Error {
   constructor() {
@@ -25,6 +38,7 @@ export class ComplianceViolationError extends Error {
 
 export interface GenerateContentInput {
   userId: string;
+  brandId: string;
   brief: string;
   formatId: string;
   threadId?: string;
@@ -41,7 +55,7 @@ Público-alvo: ${brand.targetAudience ?? "não informado"}.
 Proposta de valor: ${brand.valueProposition ?? "não informado"}.
 Tom de voz: ${brand.voiceTone ?? "profissional e direto"}. Atributos de voz: ${brand.voiceAttributes.join(", ") || "nenhum em especial"}.
 Pilares de conteúdo da marca: ${brand.contentPillars.join(", ") || "nenhum definido"}.
-
+${brand.primaryGoal ? `${GOAL_GUIDANCE[brand.primaryGoal]}\n` : ""}
 REGRAS OBRIGATÓRIAS:
 - Nunca use, em nenhuma forma ou variação, estes termos proibidos: ${brand.forbiddenTerms.join(", ") || "nenhum"}.
 - NUNCA prometa resultado garantido, prazo específico (ex: "em 6 meses"), percentual de sucesso/aprovação ou ausência de risco. Fale de forma realista e responsável.
@@ -85,8 +99,8 @@ async function requestGeneration(
  * via token, já resolvido em resolveScene.
  */
 export async function generateContent(input: GenerateContentInput): Promise<Content> {
-  const brand = await getUserBrand(input.userId);
-  if (!brand || !brand.isActive) throw new BrandNotConfiguredError();
+  const brand = await assertBrandAccess(input.userId, input.brandId);
+  if (!brand.isActive) throw new BrandNotConfiguredError();
 
   const format = await prisma.format.findUnique({ where: { id: input.formatId } });
   if (!format) throw new Error(`Formato desconhecido: ${input.formatId}`);

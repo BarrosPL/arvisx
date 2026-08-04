@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { PageHeader } from "@/components/page-header";
-import { BrandForm } from "@/components/content/brand-form";
+import { BrandManager } from "@/components/content/brand-manager";
 
 export default async function ContentBrandPage() {
   const session = await auth();
@@ -11,11 +11,8 @@ export default async function ContentBrandPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Marca"
-        description="Cores, tom de voz e regras da sua marca — usadas em toda peça gerada pela IA."
-      />
-      <BrandForm />
+      <PageHeader title="Gerenciar Marcas" description="Gerencie suas marcas e informações de perfil" />
+      <BrandManager />
     </div>
   );
 }

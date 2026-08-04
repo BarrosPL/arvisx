@@ -13,6 +13,12 @@ export const brandPaletteInputSchema = z.object({
 
 export type BrandPaletteInput = z.infer<typeof brandPaletteInputSchema>;
 
+/** Os 4 objetivos do wizard (passo "Objetivo") - usado tanto na validação quanto no
+ * parágrafo por-objetivo que generate.ts injeta no prompt de geração. */
+export const brandGoalSchema = z.enum(["VENDER", "CONSTRUIR_AUTORIDADE", "AUMENTAR_ENGAJAMENTO", "GERAR_LEADS"]);
+
+export type BrandGoalInput = z.infer<typeof brandGoalSchema>;
+
 export const upsertBrandSchema = z.object({
   name: z.string().trim().min(1).max(100),
   logoUrl: z.string().url().optional().nullable(),
@@ -25,6 +31,9 @@ export const upsertBrandSchema = z.object({
   valueProposition: z.string().trim().max(300).optional(),
   contentPillars: z.array(z.string().trim().min(1).max(60)).max(10).default([]),
   legalDisclaimer: z.string().trim().max(500).optional(),
+  primaryGoal: brandGoalSchema.optional().nullable(),
+  country: z.string().trim().min(2).max(2).default("BR"),
+  visualStyleDescription: z.string().trim().max(500).optional().nullable(),
 });
 
 export type UpsertBrandInput = z.infer<typeof upsertBrandSchema>;

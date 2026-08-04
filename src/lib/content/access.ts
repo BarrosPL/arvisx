@@ -22,10 +22,12 @@ export async function requireBrandAccess(brandId: string): Promise<{ user: Sessi
   return { user, brand };
 }
 
-/** V1 é uma marca por usuário (preenchimento manual, sem tela de "criar nova marca"
- * ainda) - resolve a única marca do usuário logado, se existir. */
-export async function getUserBrand(userId: string): Promise<Brand | null> {
-  return prisma.brand.findFirst({ where: { ownerUserId: userId } });
+/** Lista todas as marcas do usuário (multi-marca real - `ownerUserId` nunca teve
+ * constraint de unicidade, "uma marca por usuário" sempre foi só suposição de app).
+ * Mais recente primeiro, pra "Gerenciar Marcas" mostrar o que foi mexido por último
+ * no topo. */
+export async function listUserBrands(userId: string): Promise<Brand[]> {
+  return prisma.brand.findMany({ where: { ownerUserId: userId }, orderBy: { updatedAt: "desc" } });
 }
 
 /** Posse de uma peça gerada passa pela marca dona dela (Content não tem ownerUserId

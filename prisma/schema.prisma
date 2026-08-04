@@ -701,36 +701,57 @@ model SchedulerAccountResult {
 // código). Ver plano em C:\Users\lcsin\.claude\plans\hidden-zooming-cat.md.
 // =====================================================================================
 
+enum BrandGoal {
+  VENDER
+  CONSTRUIR_AUTORIDADE
+  AUMENTAR_ENGAJAMENTO
+  GERAR_LEADS
+
+  @@schema("content")
+}
+
 /**
  * Germe do Brand Kit (F1.2 da spec) - preenchimento MANUAL nesta rodada, sem extração
- * automática do Instagram/site (F1.3, fica pra depois). `ownerUserId` é FK crua pro
- * model User de "arvisx" via SQL puro na migration, SEM relation Prisma - mesmo
- * desacoplamento entre módulos já usado no F7 (nenhum módulo lê tabela de outro
+ * automática do Instagram (F1.3 fica pra depois) - a extração que existe é via upload
+ * de imagem de post já publicado (paletteExtraction.ts), não OAuth. `ownerUserId` é FK
+ * crua pro model User de "arvisx" via SQL puro na migration, SEM relation Prisma -
+ * mesmo desacoplamento entre módulos já usado no F7 (nenhum módulo lê tabela de outro
  * diretamente, regra da própria spec). `isActive` só vira true depois da tela de
  * revisão explícita (RF-1.5) - até lá, geração de conteúdo recusa usar esta marca.
+ * SEM constraint de unicidade em `ownerUserId` de propósito - um usuário pode ter
+ * várias marcas (achado real: nunca existiu essa constraint, "uma marca por usuário"
+ * sempre foi só uma suposição de app via `findFirst`, nunca do banco).
  */
 model Brand {
-  id               String   @id @default(cuid())
-  ownerUserId      String
-  name             String
-  slug             String   @unique
-  logoUrl          String?
+  id                     String     @id @default(cuid())
+  ownerUserId            String
+  name                   String
+  slug                   String     @unique
+  logoUrl                String?
   // {primary,secondary,accent,neutralDark,neutralLight,textOnPrimary,textOnLight}
-  palette          Json
-  headingFontId    String   @default("inter-bold")
-  bodyFontId       String   @default("inter-regular")
-  voiceTone        String?
-  voiceAttributes  String[]
-  forbiddenTerms   String[]
-  mandatoryTerms   Json?
-  industry         String?
-  targetAudience   String?
-  valueProposition String?
-  contentPillars   String[]
-  legalDisclaimer  String?
-  isActive         Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  palette                Json
+  headingFontId          String     @default("inter-bold")
+  bodyFontId             String     @default("inter-regular")
+  voiceTone              String?
+  voiceAttributes        String[]
+  forbiddenTerms         String[]
+  mandatoryTerms         Json?
+  industry               String?
+  targetAudience         String?
+  valueProposition       String?
+  contentPillars         String[]
+  legalDisclaimer        String?
+  // Objetivo principal (RF novo, pedido pelo Renan a partir dos prints do
+  // bestcontent.ai) - calibra tom/CTA na geração (generate.ts). Nullable pra não
+  // quebrar marcas criadas antes deste campo existir.
+  primaryGoal            BrandGoal?
+  country                String     @default("BR")
+  // Frase curta gerada por IA descrevendo o estilo visual (paleta/tom) - editável,
+  // só informativo por enquanto (não entra no prompt de geração ainda).
+  visualStyleDescription String?    @db.Text
+  isActive               Boolean    @default(false)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
 
   contents Content[]
 
