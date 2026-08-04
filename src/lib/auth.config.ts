@@ -55,13 +55,6 @@ export const authConfig = {
         return true;
       }
 
-      if (nextUrl.pathname.startsWith("/p/")) {
-        // Bio page publica (modulo de conteudo, F7) - visitada por qualquer pessoa,
-        // nunca atras de login. Mesma excecao que /api ja tem, so que pra uma pagina em
-        // vez de rota de API.
-        return true;
-      }
-
       if (isOnAuthPage) {
         if (isLoggedIn) {
           return Response.redirect(new URL("/dashboard", nextUrl));
