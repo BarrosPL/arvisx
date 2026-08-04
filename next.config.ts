@@ -29,6 +29,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // resvg-js carrega um binding nativo (.node) via um shim JS - Turbopack tenta
+  // colocar isso num chunk ESM e falha ("asset is not placeable in ESM chunks").
+  // Fora do bundle, usa require() nativo do Node em runtime, que funciona normal.
+  serverExternalPackages: ["@resvg/resvg-js"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

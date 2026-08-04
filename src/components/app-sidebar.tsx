@@ -7,6 +7,8 @@ import {
   Images,
   LayoutDashboard,
   ListChecks,
+  MessageCircle,
+  Palette,
   Plug,
   ShieldCheck,
   Sparkles,
@@ -40,6 +42,15 @@ export const GLOBAL_NAV: NavItem[] = [
   { href: "/proposals", label: "Propostas", icon: ListChecks, color: "amber" },
   { href: "/creatives", label: "Banco de Criativos", icon: Images, color: "cyan" },
   { href: "/connections", label: "Conexões", icon: Plug, color: "violet" },
+];
+
+/** Produto novo e separado do gestor de tráfego (SPEC_Funcionalidades.md) - grupo
+ * próprio pra não misturar com a nav de ads. "Marca" (Brand Kit manual) configura antes
+ * de gerar; "Chat de Conteúdo" é o agente separado da JAMILE (fatia 6) - página própria,
+ * não popup, porque é um produto/entrada diferente. */
+export const CONTENT_NAV: NavItem[] = [
+  { href: "/content/brand", label: "Marca", icon: Palette, color: "orange" },
+  { href: "/content/chat", label: "Chat de Conteúdo", icon: MessageCircle, color: "green" },
 ];
 
 export function AppSidebar({
@@ -97,6 +108,30 @@ export function AppSidebar({
             <SidebarMenu>
               {GLOBAL_NAV.map((item) => {
                 const active = pathname === item.href;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      isActive={active}
+                      tooltip={item.label}
+                      render={<Link href={item.href} />}
+                      className="relative data-active:bg-primary/8 data-active:text-primary data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-primary"
+                    >
+                      <IconBadge icon={item.icon} color={item.color} size="xs" />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Conteúdo</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {CONTENT_NAV.map((item) => {
+                const active = pathname.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton

@@ -8,7 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["arvisx"]
+  schemas  = ["arvisx", "content"]
 }
 
 // ---------- Enums ----------
@@ -689,4 +689,179 @@ model SchedulerAccountResult {
   credential AdCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
 
   @@schema("arvisx")
+}
+
+// =====================================================================================
+// Schema "content" — produto novo de geração de conteúdo social com IA, separado do
+// gestor de tráfego (schema "arvisx" acima). Escopo desta rodada (o Renan cortou F7
+// Links, F8 Créditos e o editor visual F4 - tudo passa por UM chat, sem canvas
+// interativo): Brand Kit manual (F1 mínimo), motor de render server-side com
+// Satori+resvg (F3 simplificado - sem Fabric.js/node-canvas, não existe mais "cliente"
+// pra manter em paridade), geração via IA (F2) e o próprio chat (fora do schema, é
+// código). Ver plano em C:\Users\lcsin\.claude\plans\hidden-zooming-cat.md.
+// =====================================================================================
+
+/**
+ * Germe do Brand Kit (F1.2 da spec) - preenchimento MANUAL nesta rodada, sem extração
+ * automática do Instagram/site (F1.3, fica pra depois). `ownerUserId` é FK crua pro
+ * model User de "arvisx" via SQL puro na migration, SEM relation Prisma - mesmo
+ * desacoplamento entre módulos já usado no F7 (nenhum módulo lê tabela de outro
+ * diretamente, regra da própria spec). `isActive` só vira true depois da tela de
+ * revisão explícita (RF-1.5) - até lá, geração de conteúdo recusa usar esta marca.
+ */
+model Brand {
+  id               String   @id @default(cuid())
+  ownerUserId      String
+  name             String
+  slug             String   @unique
+  logoUrl          String?
+  // {primary,secondary,accent,neutralDark,neutralLight,textOnPrimary,textOnLight}
+  palette          Json
+  headingFontId    String   @default("inter-bold")
+  bodyFontId       String   @default("inter-regular")
+  voiceTone        String?
+  voiceAttributes  String[]
+  forbiddenTerms   String[]
+  mandatoryTerms   Json?
+  industry         String?
+  targetAudience   String?
+  valueProposition String?
+  contentPillars   String[]
+  legalDisclaimer  String?
+  isActive         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  contents Content[]
+
+  @@index([ownerUserId])
+  @@schema("content")
+}
+
+/**
+ * Um formato de peça (F3.1 da spec) - dimensão + safe area por rede/placement.
+ * Nesta rodada só 3 seeds (feed quadrado, feed retrato, story), não os 17 completos.
+ */
+model Format {
+  id        String @id // ex: "ig_feed_square" - mesmo formatId da spec, não cuid
+  network   String
+  placement String
+  width     Int
+  height    Int
+  safeArea  Json // {top,bottom,left,right} em px
+
+  templates Template[]
+  contents  Content[]
+
+  @@schema("content")
+}
+
+/**
+ * Estrutura de template (F3.2) - `sceneJson` é a árvore satori (tipo JSX/React:
+ * {type,props:{style,children}}) com tokens {{brand.*}}/{{slots.*}} ainda não
+ * resolvidos; `slots` declara os limites de cada campo de texto (maxChars/maxLines/
+ * minFontSize/maxFontSize) que o autoFit usa. Poucos templates reais nesta rodada
+ * (2-3), não os ~240 da matriz completa - isso é trabalho de autoria de conteúdo, não
+ * de engenharia.
+ */
+model Template {
+  id        String @id @default(cuid())
+  formatId  String
+  archetype String
+  styleTags String[]
+  slots     Json
+  sceneJson Json
+
+  format   Format    @relation(fields: [formatId], references: [id])
+  contents Content[]
+
+  @@index([formatId])
+  @@schema("content")
+}
+
+/**
+ * Uma peça gerada - o que o chat mostra como resultado. Revisão (pedir mudança em
+ * linguagem natural) SOBRESCREVE `generation`/`scene`/`imageData` no lugar - sem
+ * histórico de versões nem undo/redo (só fazia sentido com editor visual, que não
+ * existe mais). `imageData` guarda o PNG final direto (Bytes), mesmo padrão já usado
+ * em Proposal/CreativeLibraryAsset no gestor de tráfego.
+ */
+model Content {
+  id            String   @id @default(cuid())
+  brandId       String
+  formatId      String
+  templateId    String
+  brief         String   @db.Text
+  generation    Json // saída estruturada do LLM: archetype/hook/headline/subheadline/bodyPoints/cta/caption/hashtags/altText
+  scene         Json // cena final resolvida (tokens já trocados por valor real)
+  imageData     Bytes
+  imageMimeType String   @default("image/png")
+  threadId      String?
+  // Acumulados por revisões conversacionais (F4.2/Fatia 7 - comandos `setPalette`/
+  // `setStyle`) - aplicados por CIMA da marca/autoFit a cada re-render, nunca escritos
+  // de volta no Brand (override vale só pra esta peça). Null = nenhuma revisão ainda.
+  paletteOverrides Json?
+  styleOverrides   Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  format   Format   @relation(fields: [formatId], references: [id])
+  template Template @relation(fields: [templateId], references: [id])
+
+  @@index([brandId, createdAt])
+  @@schema("content")
+}
+
+enum ContentMessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+
+  @@schema("content")
+}
+
+/**
+ * Chat do agente de geração de conteúdo (Fatia 6) - deliberadamente SEPARADO do
+ * ConversationThread da JAMILE (schema "arvisx"): reaproveitar aquela tabela exigiria
+ * relaxar a garantia de "uma thread ativa por usuário" pra "uma por usuário+agente",
+ * mexendo numa constraint que já protege uma feature em produção por causa de um
+ * domínio completamente diferente. Mesmo padrão de isolamento total já usado em
+ * Brand/Format/Template/Content - enum próprio (ContentMessageRole) em vez de
+ * reaproveitar MessageRole de "arvisx", pelo mesmo motivo.
+ */
+model ContentThread {
+  id            String    @id @default(cuid())
+  userId        String
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastMessageAt DateTime?
+
+  messages ContentMessage[]
+
+  @@index([userId])
+  @@schema("content")
+}
+
+model ContentMessage {
+  id             String             @id @default(cuid())
+  threadId       String
+  role           ContentMessageRole
+  content        String             @db.Text
+  toolName       String?
+  toolCallId     String?
+  toolArgsJson   Json?
+  toolResultJson Json?
+  // Peça gerada/revisada nesta mensagem, se houver - sem relation Prisma nem FK (mesmo
+  // desacoplamento leve que Content.threadId já usa) - deixa a UI mostrar a imagem
+  // direto na bolha da resposta sem outra consulta.
+  contentId      String?
+  createdAt      DateTime           @default(now())
+
+  thread ContentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@schema("content")
 }
