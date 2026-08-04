@@ -12,11 +12,15 @@
  */
 const DEFAULT_ANALYSIS_INTERVAL_MINUTES = 360;
 const DEFAULT_COLLECT_INTERVAL_MINUTES = 15;
+/** Curta de proposito (retencao de lead nao e cara, e webhook de lead - fatia 7 - quer
+ * latencia de minutos, nao horas). */
+const DEFAULT_CONTENT_INTERVAL_MINUTES = 5;
 /** Nao dispara logo no boot de proposito: subir uma versao nova e justamente quando o
  * usuario esta abrindo o sistema, e a coleta de dezenas de contas competindo com o
  * primeiro carregamento deixava tudo lento. 2min da tempo da navegacao inicial. */
 const FIRST_COLLECT_DELAY_MS = 120_000;
 const FIRST_ANALYSIS_DELAY_MS = 300_000;
+const FIRST_CONTENT_DELAY_MS = 60_000;
 
 const globalForScheduler = globalThis as unknown as {
   proactiveSchedulerStarted?: boolean;
@@ -46,10 +50,15 @@ export async function register() {
     process.env.COLLECT_INTERVAL_MINUTES,
     DEFAULT_COLLECT_INTERVAL_MINUTES
   );
+  const contentMinutes = intervalFromEnv(
+    process.env.CONTENT_SCHEDULER_INTERVAL_MINUTES,
+    DEFAULT_CONTENT_INTERVAL_MINUTES
+  );
 
   const { runProactiveRound } = await import("@/lib/scheduler/proactiveRound");
   const { checkRunningAbTests } = await import("@/lib/scheduler/abTestCheck");
   const { runCollectRound } = await import("@/lib/scheduler/collectRound");
+  const { runContentSchedulerRound } = await import("@/lib/content/scheduler/runContentSchedulerRound");
 
   async function collectTick() {
     try {
@@ -86,6 +95,17 @@ export async function register() {
     }
   }
 
+  async function contentTick() {
+    try {
+      const result = await runContentSchedulerRound();
+      if (result.retention.deleted > 0) {
+        console.log(`[conteudo] retenção: ${result.retention.deleted} lead(s) apagado(s)`);
+      }
+    } catch (error) {
+      console.error("[conteudo] rodada falhou:", error);
+    }
+  }
+
   // A coleta comeca antes da analise de proposito - assim a primeira tela ja tem dado
   // fresco sem esperar a rodada cara terminar.
   setTimeout(() => {
@@ -98,7 +118,12 @@ export async function register() {
     setInterval(analysisTick, analysisMinutes * 60 * 1000);
   }, FIRST_ANALYSIS_DELAY_MS);
 
+  setTimeout(() => {
+    contentTick();
+    setInterval(contentTick, contentMinutes * 60 * 1000);
+  }, FIRST_CONTENT_DELAY_MS);
+
   console.log(
-    `[scheduler] agendado - coleta a cada ${collectMinutes}min (sem IA), análise a cada ${analysisMinutes}min`
+    `[scheduler] agendado - coleta a cada ${collectMinutes}min (sem IA), análise a cada ${analysisMinutes}min, conteúdo a cada ${contentMinutes}min`
   );
 }
